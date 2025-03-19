@@ -109,6 +109,10 @@ set(header_files_to_check
     cute/arch/mma_sm90.hpp
     cute/arch/mma_sm90_desc.hpp
     cute/arch/mma_sm90_gmma.hpp
+
+    cute/arch/mma_aurora.hpp
+    cute/arch/mma_aurora_gmma.hpp
+
     cute/arch/mma.hpp
     cute/arch/util.hpp
 
@@ -138,6 +142,8 @@ set(header_files_to_check
     cute/atom/mma_traits_sm80.hpp
     cute/atom/mma_traits_sm90.hpp
     cute/atom/mma_traits_sm90_gmma.hpp
+
+    cute/atom/mma_traits_aurora_gmma.hpp
 
     cute/atom/mma_traits_sm100.hpp
     cute/atom/partitioner.hpp

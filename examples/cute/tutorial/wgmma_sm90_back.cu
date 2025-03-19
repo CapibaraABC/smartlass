@@ -44,7 +44,7 @@
 #include "cutlass/util/print_error.hpp"
 #include "cutlass/util/GPU_Clock.hpp"
 #include "cutlass/util/helper_cuda.hpp"
-//#include "cutlass/arch/mma_sm90.h"
+#include "cutlass/arch/mma_sm90.h"
 #include "cutlass/device_kernel.h"
 
 using namespace cute;
@@ -293,8 +293,7 @@ gemm_nt(int m, int n, int k,
   auto sB = tile_to_shape(GMMA::Layout_MN_SW128_Atom<TB>{}, make_shape(bN,bK,bP));
 
   // Define the MMA
-  // TiledMMA tiled_mma = make_tiled_mma(SM90_64x64x16_F16F16F16_SS<GMMA::Major::MN,GMMA::Major::MN>{});
-  TiledMMA tiled_mma = make_tiled_mma(Aurora_64x64x16_F16F16F16_SS<GMMA::Major::MN,GMMA::Major::MN>{});
+  TiledMMA tiled_mma = make_tiled_mma(SM90_64x64x16_F16F16F16_SS<GMMA::Major::MN,GMMA::Major::MN>{});
 
   // Define the TMAs
   // Create Global memory tensors for TMA inspection
@@ -378,8 +377,7 @@ gemm_tn(int m, int n, int k,
   auto sB = tile_to_shape(GMMA::Layout_K_SW128_Atom<TB>{}, make_shape(bN,bK,bP));
 
   // Define the MMA
-  // TiledMMA tiled_mma = make_tiled_mma(SM90_64x64x16_F16F16F16_SS<GMMA::Major::K,GMMA::Major::K>{});
-  TiledMMA tiled_mma = make_tiled_mma(Aurora_64x64x16_F16F16F16_SS<GMMA::Major::K,GMMA::Major::K>{});
+  TiledMMA tiled_mma = make_tiled_mma(SM90_64x64x16_F16F16F16_SS<GMMA::Major::K,GMMA::Major::K>{});
 
   // Define the TMAs
   // Create Global memory tensors for TMA inspection
@@ -465,15 +463,15 @@ int main(int argc, char** argv)
 
 #if defined(CUTLASS_ARCH_MMA_SM90_SUPPORTED)
 
-  int m = 512;    //512
+  int m = 512;
   if (argc >= 2)
     sscanf(argv[1], "%d", &m);
 
-  int n = 256;    //256
+  int n = 256;
   if (argc >= 3)
     sscanf(argv[2], "%d", &n);
 
-  int k = 1024;   //1024
+  int k = 1024;
   if (argc >= 4)
     sscanf(argv[3], "%d", &k);
 

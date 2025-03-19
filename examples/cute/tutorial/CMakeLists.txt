@@ -28,30 +28,30 @@
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 
-cutlass_example_add_executable(
-  sgemm_1
-  sgemm_1.cu
-)
+# cutlass_example_add_executable(
+#   sgemm_1
+#   sgemm_1.cu
+# )
 
-cutlass_example_add_executable(
-  sgemm_2
-  sgemm_2.cu
-)
+# cutlass_example_add_executable(
+#   sgemm_2
+#   sgemm_2.cu
+# )
 
-cutlass_example_add_executable(
-  sgemm_sm70
-  sgemm_sm70.cu
-)
+# cutlass_example_add_executable(
+#   sgemm_sm70
+#   sgemm_sm70.cu
+# )
 
-cutlass_example_add_executable(
-  sgemm_sm80
-  sgemm_sm80.cu
-)
+# cutlass_example_add_executable(
+#   sgemm_sm80
+#   sgemm_sm80.cu
+# )
 
-cutlass_example_add_executable(
-  tiled_copy
-  tiled_copy.cu
-)
+# cutlass_example_add_executable(
+#   tiled_copy
+#   tiled_copy.cu
+# )
 
 cutlass_example_add_executable(
   wgmma_sm90

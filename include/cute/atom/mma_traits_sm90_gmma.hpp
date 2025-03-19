@@ -39,7 +39,7 @@
 #include <cute/atom/mma_traits.hpp>            // cute::MMA_Traits
 #include <cute/layout_composed.hpp>            // cute::ComposedLayout
 #include <cute/numeric/integral_constant.hpp>  // cute::is_static
-
+#include <cute/arch/mma_aurora_gmma.hpp>
 namespace cute {
 
 // Fence between the async destination accumulators of GMMA & source for their dependent use
@@ -673,6 +673,36 @@ struct MMA_Traits<SM90_64x64x16_F16F16F16_SS<tnspA, tnspB, scaleA, scaleB>>
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+
+template <
+  GMMA::Major tnspA,
+  GMMA::Major tnspB,
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+using Aurora_64x64x16_F16F16F16_SS = SM90::GMMA::MMA_Aurora_64x64x16_F16F16F16_SS<tnspA, tnspB, scaleA, scaleB>;
+
+template <GMMA::Major tnspA, GMMA::Major tnspB, GMMA::ScaleIn scaleA, GMMA::ScaleIn scaleB>
+struct MMA_Traits<Aurora_64x64x16_F16F16F16_SS<tnspA, tnspB, scaleA, scaleB>>
+{
+  using ValTypeD = half_t;
+  using ValTypeA = half_t;
+  using ValTypeB = half_t;
+  using ValTypeC = half_t;
+
+  using FrgTypeA = GMMA::smem_desc<tnspA>;
+  using FrgTypeB = GMMA::smem_desc<tnspB>;
+
+  using Shape_MNK = Shape<_64,_64,_16>;
+  using ThrID   = Layout<_128>;
+  using ALayout = GMMA::ABLayout< 64, 16>;
+  using BLayout = GMMA::ABLayout< 64, 16>;
+  using CLayout = GMMA::CLayout_64x64;
+
+  GMMA::ScaleOut accumulate_ = GMMA::ScaleOut::One;
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
 template <
   GMMA::Major tnspA,
   GMMA::Major tnspB,

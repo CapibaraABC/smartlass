@@ -1,5 +1,5 @@
 /***************************************************************************************************
- * Copyright (c) 2023 - 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * Copyright (c) 2023 - 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  *
  * Redistribution and use in source and binary forms, with or without
@@ -72,7 +72,7 @@ template <
   class SmemCopyAtomB_,
   class TransformB_>
 struct CollectiveMma<
-    MainloopSm90CpAsyncGmmaRmemAWarpSpecialized<Stages,ClusterShape_,KernelSchedule>,
+    MainloopMa100Cooperative<Stages,ClusterShape_,KernelSchedule>,
     TileShape_,
     ElementA_,
     StrideA_,
@@ -91,7 +91,7 @@ struct CollectiveMma<
   //
   // Type Aliases
   //
-  using DispatchPolicy = MainloopSm90CpAsyncGmmaRmemAWarpSpecialized<Stages,ClusterShape_,KernelSchedule>;
+  using DispatchPolicy = MainloopMa100Cooperative<Stages,ClusterShape_,KernelSchedule>;
   using TileShape = TileShape_;
   using ClusterShape = ClusterShape_;
   using ElementA = ElementA_;
@@ -119,8 +119,8 @@ struct CollectiveMma<
   using InternalGmemTiledCopyB = cute::conditional_t<!SwapAB, GmemTiledCopyB, GmemTiledCopyA>;
   using InternalSmemLayoutAtomA = cute::conditional_t<!SwapAB, SmemLayoutAtomA, SmemLayoutAtomB>;
   using InternalSmemLayoutAtomB = cute::conditional_t<!SwapAB, SmemLayoutAtomB, SmemLayoutAtomA>;
-  using InternalSmemCopyAtomA   = cute::conditional_t<!SwapAB, SmemCopyAtomA, SmemCopyAtomB>;
-  using InternalSmemCopyAtomB   = cute::conditional_t<!SwapAB, SmemCopyAtomB, SmemCopyAtomA>;
+  // using InternalSmemCopyAtomA   = cute::conditional_t<!SwapAB, SmemCopyAtomA, SmemCopyAtomB>;
+  // using InternalSmemCopyAtomB   = cute::conditional_t<!SwapAB, SmemCopyAtomB, SmemCopyAtomA>;
   // TMA converts f32 input to tf32 when copying from GMEM to SMEM
   // For all other types, cast to size equivalent uint type to avoid any rounding by TMA.
   static constexpr bool ConvertF32toTF32A = cute::is_same_v<float, ElementA>;
@@ -148,12 +148,15 @@ struct CollectiveMma<
   static_assert((size<1>(TileShape{}) % size<0>(InternalSmemLayoutAtomB{})) == 0, "SmemLayoutAtom must evenly divide tile shape.");
   static_assert((size<2>(TileShape{}) % size<1>(InternalSmemLayoutAtomB{})) == 0, "SmemLayoutAtom must evenly divide tile shape.");
 
+  // static_assert(false, "before SmemLayoutA.");
   using SmemLayoutA = decltype(tile_to_shape(
       InternalSmemLayoutAtomA{},
       make_shape(shape<0>(TileShape{}), shape<2>(TileShape{}), Int<DispatchPolicy::Stages>{})));
+  // static_assert(false, "after SmemLayoutA.");
   using SmemLayoutB = decltype(tile_to_shape(
       InternalSmemLayoutAtomB{},
       make_shape(shape<1>(TileShape{}), shape<2>(TileShape{}), Int<DispatchPolicy::Stages>{})));
+  // static_assert(false, "after SmemLayoutB.");
 
   // If A mn-layout and B mn-layout, transposing B matrix since WGMMA is k-major only (e.g. tf32, fp32, fp8, int8).
   static constexpr bool IsLayoutAmnBmn =
@@ -177,13 +180,13 @@ struct CollectiveMma<
       GmmaSmemLayoutAtomB{},
       make_shape(shape<1>(TileShape{}), shape<2>(TileShape{}), Int<DispatchPolicy::Stages>{})));
 
-  static_assert(!SwapAB || !TransposeB, "Cannot SwapAB and TransposeB at the same time.");
-  static_assert(TransposeB xor (cute::is_same_v<SmemLayoutB, GmmaSmemLayoutB>),
-    "Should be same layout if not TransposeB.");
-  static_assert(!TransposeB || (cutlass::bits_to_bytes(size<1>(SmemLayoutB{}) * sizeof_bits<InternalElementB>::value)) == 128,
-    "SmemLayoutB K must be 128bytes to be transposed.");
-  static_assert(!transform::collective::detail::use_universal_transposition<InternalSmemLayoutAtomB, InternalElementB>(),
-    "Warp specialized ARF kernels have not supported universal B transposition yet.");
+  // static_assert(!SwapAB || !TransposeB, "Cannot SwapAB and TransposeB at the same time.");
+  // static_assert(TransposeB xor (cute::is_same_v<SmemLayoutB, GmmaSmemLayoutB>),
+  //   "Should be same layout if not TransposeB.");
+  // static_assert(!TransposeB || (cutlass::bits_to_bytes(size<1>(SmemLayoutB{}) * sizeof_bits<InternalElementB>::value)) == 128,
+  //   "SmemLayoutB K must be 128bytes to be transposed.");
+  // static_assert(!transform::collective::detail::use_universal_transposition<InternalSmemLayoutAtomB, InternalElementB>(),
+  //   "Warp specialized ARF kernels have not supported universal B transposition yet.");
 
   struct SharedStorage
   {
@@ -303,10 +306,12 @@ struct CollectiveMma<
     auto gmem_thr_copy_a = gmem_tiled_copy_a.get_slice(thread_idx);
     auto gmem_thr_copy_b = gmem_tiled_copy_b.get_slice(thread_idx);
 
+
     Tensor tAgA = gmem_thr_copy_a.partition_S(gA);                        // (ACPY,ACPY_M,ACPY_K,k)
     Tensor tAsA = gmem_thr_copy_a.partition_D(sA);                        // (ACPY,ACPY_M,ACPY_K,PIPE)
     Tensor tBgB = gmem_thr_copy_b.partition_S(gB);                        // (BCPY,BCPY_N,BCPY_K,k)
     Tensor tBsB = gmem_thr_copy_b.partition_D(sB);                        // (BCPY,BCPY_N,BCPY_K,PIPE)
+
 
     // Allocate predicate tensors for m and n
     Tensor tApA = make_tensor<bool>(make_shape(size<1>(tAsA), size<2>(tAsA)), Stride<_1,_0>{});
@@ -319,6 +324,7 @@ struct CollectiveMma<
     // Repeat the partitioning with identity layouts
     Tensor tAcA = gmem_thr_copy_a.partition_S(cA);                             // (ACPY,ACPY_M,ACPY_K) -> (blk_m,blk_k)
     Tensor tBcB = gmem_thr_copy_b.partition_S(cB);                             // (BCPY,BCPY_N,BCPY_K) -> (blk_n,blk_k)
+
 
     // Set predicates for m bounds
     CUTLASS_PRAGMA_UNROLL
@@ -334,8 +340,9 @@ struct CollectiveMma<
     // 0-th stage with predication on k to account for residue
     {
       // LOCK smem_pipe_write for _writing_
-      pipeline.producer_acquire(smem_pipe_write);
-      int write_stage = smem_pipe_write.index();
+      // pipeline.producer_acquire(smem_pipe_write);
+      // int write_stage = smem_pipe_write.index();
+      int write_stage = 0;
 
       // Copy gmem to smem for *k_tile_iter, predicating for k residue
       Tensor tAgAk = tAgA(_,_,_,*k_tile_iter);
@@ -363,18 +370,21 @@ struct CollectiveMma<
       --k_tile_count;
 
       // UNLOCK smem_pipe_write
-      pipeline.producer_commit(smem_pipe_write, cutlass::arch::cpasync_barrier_arrive);
+      // pipeline.producer_commit(smem_pipe_write, cutlass::arch::cpasync_barrier_arrive);
 
       // Advance smem_pipe_write
-      ++smem_pipe_write;
+      // ++smem_pipe_write;
     }
 
     // Mainloop
     CUTLASS_PRAGMA_NO_UNROLL
     for ( ; k_tile_count > 0; --k_tile_count) {
       // LOCK smem_pipe_write for _writing_
-      pipeline.producer_acquire(smem_pipe_write);
-      int write_stage = smem_pipe_write.index();
+      // pipeline.producer_acquire(smem_pipe_write);
+      // int write_stage = smem_pipe_write.index();
+      int write_stage = 0;
+      Tensor tAgAk_ = tAgA(_,_,_,*k_tile_iter);
+      Tensor tBgBk_ = tBgB(_,_,_,*k_tile_iter);
 
       // Copy gmem to smem for *k_tile_iter
       copy_if(gmem_tiled_copy_a, tApA, tAgA(_,_,_,*k_tile_iter), tAsA(_,_,_,write_stage));
@@ -382,10 +392,10 @@ struct CollectiveMma<
       ++k_tile_iter;
 
       // UNLOCK smem_pipe_write
-      pipeline.producer_commit(smem_pipe_write, cutlass::arch::cpasync_barrier_arrive);
+      // pipeline.producer_commit(smem_pipe_write, cutlass::arch::cpasync_barrier_arrive);
 
       // Advance smem_pipe_write
-      ++smem_pipe_write;
+      // ++smem_pipe_write;
     }
   }
 
@@ -401,7 +411,7 @@ struct CollectiveMma<
      * then would just be acquired since the phase was 
      * still inverted from make_producer_start_state
      */
-    pipeline.producer_tail(smem_pipe_write);
+    // pipeline.producer_tail(smem_pipe_write);
   }
 
   /// Perform a collective-scoped matrix multiply-accumulate
@@ -424,10 +434,10 @@ struct CollectiveMma<
     static_assert(cute::rank(SmemLayoutB{}) == 3, "Smem layout must be rank 3.");
     static_assert(cute::rank(InternalSmemLayoutAtomA{}) == 2, "InternalSmemLayoutAtomA must be rank 2.");
     static_assert(cute::rank(InternalSmemLayoutAtomB{}) == 2, "InternalSmemLayoutAtomB must be rank 2.");
-    static_assert(!cute::is_void_v<InternalSmemCopyAtomA>,
-      "SM90 GMMA mainloops must specify a non-void copy atom for smem sourced instructions.");
-    static_assert(cute::is_void_v<InternalSmemCopyAtomB>,
-      "SM90 GMMA mainloops cannot have a non-void copy atom for smem sourced instructions.");
+    // static_assert(!cute::is_void_v<InternalSmemCopyAtomA>,
+    //   "SM90 GMMA mainloops must specify a non-void copy atom for smem sourced instructions.");
+    // static_assert(cute::is_void_v<InternalSmemCopyAtomB>,
+    //   "SM90 GMMA mainloops cannot have a non-void copy atom for smem sourced instructions.");
 
     // Obtain warp index
     int warp_idx = canonical_warp_idx_sync();
@@ -472,14 +482,14 @@ struct CollectiveMma<
     //
 
 
-    auto smem_tiled_copy_A = make_tiled_copy_A(InternalSmemCopyAtomA{}, tiled_mma);
+    // auto smem_tiled_copy_A = make_tiled_copy_A(InternalSmemCopyAtomA{}, tiled_mma);
 
-    auto smem_thr_copy_A   = smem_tiled_copy_A.get_thread_slice(thread_idx);
+    // auto smem_thr_copy_A   = smem_tiled_copy_A.get_thread_slice(thread_idx);
 
-    Tensor tCrA_copy_view  = smem_thr_copy_A.retile_D(tCrA);                                       // (CPY,CPY_M,CPY_K)
+    // Tensor tCrA_copy_view  = smem_thr_copy_A.retile_D(tCrA);                                       // (CPY,CPY_M,CPY_K)
 
-    CUTE_STATIC_ASSERT_V(size<1>(tCsA) == size<1>(tCrA_copy_view));                                            // CPY_M
-    CUTE_STATIC_ASSERT_V(size<2>(tCsA) == size<2>(tCrA_copy_view));                                            // CPY_K
+    // CUTE_STATIC_ASSERT_V(size<1>(tCsA) == size<1>(tCrA_copy_view));                                            // CPY_M
+    // CUTE_STATIC_ASSERT_V(size<2>(tCsA) == size<2>(tCrA_copy_view));                                            // CPY_K
     CUTE_STATIC_ASSERT_V(size<1>(tCrA) == size<1>(accum));                                                     // MMA_M
     CUTE_STATIC_ASSERT_V(size<1>(tCsB) == size<2>(accum));                                                         // N
     CUTE_STATIC_ASSERT_V(size<2>(tCsA) == size<2>(tCsB));                                                          // K
@@ -494,7 +504,7 @@ struct CollectiveMma<
         "ERROR : Incorrect number of MMAs in flight");
 
     // We release buffers to producer warps(dma load) with some mmas in flight
-    PipelineState smem_pipe_release = smem_pipe_read;
+    // PipelineState smem_pipe_release = smem_pipe_read;
 
     tiled_mma.accumulate_ = GMMA::ScaleOut::Zero;
 
@@ -503,10 +513,10 @@ struct CollectiveMma<
                                     InternalSmemLayoutAtomB{}, InternalElementB{}, 
                                     cute::bool_constant<TransposeB>{});
 
-    warpgroup_fence_operand(accum);
+    // warpgroup_fence_operand(accum);
     // first k tile
     {
-      pipeline.consumer_wait(smem_pipe_read);
+      // pipeline.consumer_wait(smem_pipe_read);
 
       int read_stage = smem_pipe_read.index();
 
@@ -515,14 +525,14 @@ struct CollectiveMma<
       bool skip_wait = (pipeline.consumer_try_wait(smem_pipe_read) == BarrierStatus::WaitDone);
 
       // copy smem->rmem for A operand
-      copy(smem_tiled_copy_A, tCsA(_,_,0,read_stage), tCrA_copy_view(_,_,0));
+      // copy(smem_tiled_copy_A, tCsA(_,_,0,read_stage), tCrA_copy_view(_,_,0));
       // transpose B operand in SMEM
       transpose(sB, gmma_sB, read_stage, 0);
 
       // Unroll the K mode manually to set scale D to 1
       CUTLASS_PRAGMA_UNROLL
       for (int k_block = 0; k_block < size<2>(tCrA) - 1; ++k_block) {
-        copy(smem_tiled_copy_A, tCsA(_,_,k_block + 1,read_stage), tCrA_copy_view(_,_,k_block + 1));
+        // copy(smem_tiled_copy_A, tCsA(_,_,k_block + 1,read_stage), tCrA_copy_view(_,_,k_block + 1));
         if (k_block == 0) {
           transpose(sB, gmma_sB, read_stage, 1);
           transpose.synchronize();
@@ -539,9 +549,9 @@ struct CollectiveMma<
       
       if (k_tile_count - 1 > 0) {
         if (!skip_wait) {
-          pipeline.consumer_wait(smem_pipe_read);
+          // pipeline.consumer_wait(smem_pipe_read);
         }
-        copy(smem_tiled_copy_A, tCsA(_,_,0,smem_pipe_read.index()), tCrA_copy_view(_,_,0));
+        // copy(smem_tiled_copy_A, tCsA(_,_,0,smem_pipe_read.index()), tCrA_copy_view(_,_,0));
         transpose(sB, gmma_sB, smem_pipe_read.index(), 0);
       }
 
@@ -553,7 +563,7 @@ struct CollectiveMma<
       warpgroup_wait<2>();
     }
 
-    warpgroup_fence_operand(accum);
+    // warpgroup_fence_operand(accum);
     // Mainloop GMMAs
     --k_tile_count;
     CUTLASS_PRAGMA_NO_UNROLL
@@ -566,21 +576,21 @@ struct CollectiveMma<
       int read_stage = smem_pipe_read.index();
 
       ++smem_pipe_read;
-      bool skip_wait = (pipeline.consumer_try_wait(smem_pipe_read) == BarrierStatus::WaitDone);
+      // bool skip_wait = (pipeline.consumer_try_wait(smem_pipe_read) == BarrierStatus::WaitDone);
 
-      warpgroup_fence_operand(accum);
+      // warpgroup_fence_operand(accum);
       // Unroll the K mode manually to set scale D to 1
       CUTLASS_PRAGMA_UNROLL
       for (int k_block = 0; k_block < size<2>(tCrA); ++k_block) {
         if (k_block == size<2>(tCrA) - 1) {
-          if (!skip_wait) {
-            pipeline.consumer_wait(smem_pipe_read);
-          }
-          copy(smem_tiled_copy_A, tCsA(_,_,0,smem_pipe_read.index()), tCrA_copy_view(_,_,0));
+          // if (!skip_wait) {
+          //   pipeline.consumer_wait(smem_pipe_read);
+          // }
+          // copy(smem_tiled_copy_A, tCsA(_,_,0,smem_pipe_read.index()), tCrA_copy_view(_,_,0));
           // transpose B operand in SMEM
           transpose(sB, gmma_sB, smem_pipe_read.index(), 0);
         } else {
-          copy(smem_tiled_copy_A, tCsA(_,_,k_block + 1,read_stage), tCrA_copy_view(_,_,k_block + 1));
+          // copy(smem_tiled_copy_A, tCsA(_,_,k_block + 1,read_stage), tCrA_copy_view(_,_,k_block + 1));
           // transpose B operand in SMEM
           if (k_block < 2) {
             transpose.synchronize(k_block);                                      // make transpose of k_block available
@@ -598,15 +608,15 @@ struct CollectiveMma<
         warpgroup_wait<2>();
         if (k_block == 1) {
           // release prior barrier
-          pipeline.consumer_release(smem_pipe_release);             // UNLOCK smem_pipe_release, done _computing_ on it
-          ++smem_pipe_release;
+          // pipeline.consumer_release(smem_pipe_release);             // UNLOCK smem_pipe_release, done _computing_ on it
+          // ++smem_pipe_release;
         }
       }
-      warpgroup_fence_operand(accum);
+      // warpgroup_fence_operand(accum);
 
     }
 
-    warpgroup_fence_operand(accum);
+    // warpgroup_fence_operand(accum);
 
     if (k_tile_count > 0) {
       //
@@ -615,11 +625,11 @@ struct CollectiveMma<
 
       int read_stage = smem_pipe_read.index();
 
-      warpgroup_fence_operand(accum);
+      // warpgroup_fence_operand(accum);
       // Unroll the K mode manually to set scale D to 1
       CUTLASS_PRAGMA_UNROLL
       for (int k_block = 0; k_block < size<2>(tCrA) - 1; ++k_block) {
-        copy(smem_tiled_copy_A, tCsA(_,_,k_block + 1,read_stage), tCrA_copy_view(_,_,k_block + 1));
+        // copy(smem_tiled_copy_A, tCsA(_,_,k_block + 1,read_stage), tCrA_copy_view(_,_,k_block + 1));
         if (k_block < 2) {
           transpose.synchronize(k_block);                                           // make k_block transpose available
         }
@@ -634,8 +644,8 @@ struct CollectiveMma<
         warpgroup_wait<2>();
         if (k_block == 1) {
           // release prior barrier
-          pipeline.consumer_release(smem_pipe_release);             // UNLOCK smem_pipe_release, done _computing_ on it
-          ++smem_pipe_release;
+          // pipeline.consumer_release(smem_pipe_release);             // UNLOCK smem_pipe_release, done _computing_ on it
+          // ++smem_pipe_release;
         }
       }
       
@@ -645,10 +655,10 @@ struct CollectiveMma<
       tiled_mma.accumulate_ = GMMA::ScaleOut::One;
       warpgroup_commit_batch();
       warpgroup_wait<2>();
-      warpgroup_fence_operand(accum);
+      // warpgroup_fence_operand(accum);
     }
 
-    warpgroup_fence_operand(accum);
+    // warpgroup_fence_operand(accum);
   }
 
   /// Perform a Consumer Epilogue to release all buffers
@@ -656,16 +666,16 @@ struct CollectiveMma<
   mma_tail(MainloopPipeline pipeline, PipelineState smem_pipe_release, int k_tile_count) {
     // Prologue GMMAs
     int prologue_mma_count = min(K_PIPE_MMAS, k_tile_count);
-    k_tile_count -= prologue_mma_count;
+    // k_tile_count -= prologue_mma_count;
 
-    smem_pipe_release.advance(k_tile_count);
+    // smem_pipe_release.advance(k_tile_count);
     
     // Wait on all GMMAs to complete
-    warpgroup_wait<0>();
+    // warpgroup_wait<0>();
 
     for (int count = 0; count < prologue_mma_count; ++count) {
-      pipeline.consumer_release(smem_pipe_release);                 // UNLOCK smem_pipe_release, done _computing_ on it
-      ++smem_pipe_release;
+      // pipeline.consumer_release(smem_pipe_release);                 // UNLOCK smem_pipe_release, done _computing_ on it
+      // ++smem_pipe_release;
     }
   }
 };

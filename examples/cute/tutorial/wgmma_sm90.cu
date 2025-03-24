@@ -289,8 +289,8 @@ gemm_nt(int m, int n, int k,
   auto bP = Int<  3>{};  // Pipeline
 
   // Define the smem layouts (static)
-  auto sA = tile_to_shape(GMMA::Layout_MN_SW128_Atom<TA>{}, make_shape(bM,bK,bP));
-  auto sB = tile_to_shape(GMMA::Layout_MN_SW128_Atom<TB>{}, make_shape(bN,bK,bP));
+  auto sA = tile_to_shape(AMMA::Layout_MN_SW128_Atom<TA>{}, make_shape(bM,bK,bP));
+  auto sB = tile_to_shape(AMMA::Layout_MN_SW128_Atom<TB>{}, make_shape(bN,bK,bP));
 
   // Define the MMA
   // TiledMMA tiled_mma = make_tiled_mma(SM90_64x64x16_F16F16F16_SS<GMMA::Major::MN,GMMA::Major::MN>{});
@@ -465,15 +465,15 @@ int main(int argc, char** argv)
 
 #if defined(CUTLASS_ARCH_MMA_SM90_SUPPORTED)
 
-  int m = 512;    //512
+  int m = 128;    //512
   if (argc >= 2)
     sscanf(argv[1], "%d", &m);
 
-  int n = 256;    //256
+  int n = 128;    //256
   if (argc >= 3)
     sscanf(argv[2], "%d", &n);
 
-  int k = 1024;   //1024
+  int k = 64;   //1024
   if (argc >= 4)
     sscanf(argv[3], "%d", &k);
 

@@ -43,6 +43,7 @@ namespace cute {
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 // Warpgroup sync primitives
+//shouldn't be annotated
 
 // CUTE_HOST_DEVICE
 // void
@@ -140,6 +141,22 @@ struct MMA_Aurora_64x64x16_F16F16F16_SS
   using ARegisters = uint64_t[1];
   using BRegisters = uint64_t[1];
   using CRegisters = uint32_t[16];
+
+  CUTE_HOST_DEVICE static void
+  gemm_cal(uint16_t const alpha, 
+           uint32_t const m, 
+           uint32_t const n, 
+           uint32_t const k,
+           void* const MatrixA, 
+           void* const MatrixB, 
+           void* const MatrixC){
+            if(threadIdx.x == 0 && blockIdx.x == 0){
+              printf("\n in gemm_cal\n");
+              printf("alpha:%u, m:%u, n:%u, k:%u\n", alpha, m, n, k);
+              printf("MatrixA:%p, MatrixB:%p, MatrixC:%p\n", MatrixA, MatrixB, MatrixC);
+            }
+            //call spu
+  }
 
   CUTE_HOST_DEVICE static void
   fma(uint64_t const& desc_a,

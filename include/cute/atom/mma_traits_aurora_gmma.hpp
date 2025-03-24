@@ -395,7 +395,7 @@ mma_unpack(MMA_Traits<MMA_Op, MMA_Args...> const& traits,
            Tensor<TC, CLayout> const& C)
 {
     if(threadIdx.x == 0 && blockIdx.x == 0){
-        printf("call AURORA::AMMA::mma_unpack again.\n");
+        printf("call AURORA::AMMA::mma_unpack again and agian.\n");
       }
   static_assert(is_rmem<TD>::value, "Expected registers in MMA_Atom::call");
   static_assert(is_rmem<TA>::value, "Expected registers in MMA_Atom::call");
@@ -424,11 +424,40 @@ mma_unpack(MMA_Traits<MMA_Op, MMA_Args...> const& traits,
   CUTE_STATIC_ASSERT_V(size(rB) == Int<RegNumB>{});
   CUTE_STATIC_ASSERT_V(size(rC) == Int<RegNumC>{});
 
-  detail::explode(MMA_Op::fma,
-                  rA, make_int_sequence<RegNumA>{},
-                  rB, make_int_sequence<RegNumB>{},
-                  rC, make_int_sequence<RegNumC>{},
-                  &(traits.accumulate_), seq<0>{});
+
+  using Traits = MMA_Traits<MMA_Op, MMA_Args...>;
+  using Shape_MNK  = typename Traits::Shape_MNK;
+
+  Shape_MNK shape;
+  uint32_t m = size<0>(shape);
+  uint32_t n = size<1>(shape);
+  uint32_t k = size<2>(shape);
+  uint16_t alpha = 0;
+
+  uint32_t addressA = A.data().desc_.bitfield.start_address_ << 4;
+  uint32_t addressB = B.data().desc_.bitfield.start_address_ << 4;
+  
+
+  auto MatrixA = reinterpret_cast<void*>(addressA);
+  auto MatrixB = reinterpret_cast<void*>(addressB);
+  auto MatrixC = C.data();                           //C.data is the const cutlass::half_t* const type
+
+  if(threadIdx.x == 0 && blockIdx.x == 0){
+    printf("m:%u, n:%u, k:%u\n", m, n, k);
+    printf("in mma_unpack, MatrixA:%p, MatrixB:%p, MatrixC:%p\n", MatrixA, MatrixB, MatrixC);
+  } 
+
+  detail::explode_tuple(MMA_Op::gemm_cal,
+                        make_tuple(alpha), seq<0>{},
+                        make_tuple(m, n, k), seq<0,1,2>{},
+                        make_tuple(MatrixA, MatrixB, (void*)MatrixC), seq<0,1,2>{}
+                        );
+
+  // detail::explode(MMA_Op::fma,
+  //                 rA, make_int_sequence<RegNumA>{},
+  //                 rB, make_int_sequence<RegNumB>{},
+  //                 rC, make_int_sequence<RegNumC>{},
+  //                 &(traits.accumulate_), seq<0>{});
 }
 
 // Accumulator layouts

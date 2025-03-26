@@ -169,9 +169,9 @@ struct CollectiveMma<
                                       InternalElementB{}, cute::bool_constant<TransposeB>{})); 
 
   static_assert(DispatchPolicy::Stages >= 2, "Specialization requires Stages set to value 2 or more.");
-  static_assert(cute::is_base_of<cute::GMMA::DescriptorIterator, typename TiledMma::FrgTypeA>::value &&
-                cute::is_base_of<cute::GMMA::DescriptorIterator, typename TiledMma::FrgTypeB>::value,
-                "MMA atom must source both A and B operand from smem_desc for this mainloop.");
+  // static_assert(cute::is_base_of<cute::GMMA::DescriptorIterator, typename TiledMma::FrgTypeA>::value &&
+  //               cute::is_base_of<cute::GMMA::DescriptorIterator, typename TiledMma::FrgTypeB>::value,
+  //               "MMA atom must source both A and B operand from smem_desc for this mainloop.");
 
   using GmmaSmemLayoutAtomB = decltype(transform::collective::detail::gmma_smem_transpose_or_passthrough<
       TransposeB, InternalSmemLayoutAtomB, InternalElementB>());
@@ -608,7 +608,7 @@ struct CollectiveMma<
     // Prologue GMMAs
     int prologue_mma_count = min(K_PIPE_MMAS, k_tile_count);
     assert(k_tile_count >= 1);
-    tiled_mma.accumulate_ = GMMA::ScaleOut::Zero;
+    tiled_mma.accumulate_ = AMMA::ScaleOut::Zero;
     warpgroup_fence_operand(accum);
     {
       // WAIT on smem_pipe_read until its data are available (phase bit flips from rdPhaseBit value)
@@ -617,13 +617,13 @@ struct CollectiveMma<
 
       int read_stage = smem_pipe_read.index();
       warpgroup_arrive();
-      tiled_mma.accumulate_ = GMMA::ScaleOut::Zero;
+      tiled_mma.accumulate_ = AMMA::ScaleOut::Zero;
       // Unroll the K mode manually to set scale D to 1
       CUTLASS_PRAGMA_UNROLL
       for (int k_block = 0; k_block < size<2>(tCrA); ++k_block) {
         // (V,M,K) x (V,N,K) => (V,M,N)
         cute::gemm(tiled_mma, tCrA(_,_,k_block,read_stage), tCrB(_,_,k_block,read_stage), accum);
-        tiled_mma.accumulate_ = GMMA::ScaleOut::One;
+        tiled_mma.accumulate_ = AMMA::ScaleOut::One;
       }
 
       warpgroup_commit_batch();
@@ -631,7 +631,7 @@ struct CollectiveMma<
       ++smem_pipe_read;
     }
 
-    tiled_mma.accumulate_ = GMMA::ScaleOut::One;
+    tiled_mma.accumulate_ = AMMA::ScaleOut::One;
 
     warpgroup_fence_operand(accum);
     CUTLASS_PRAGMA_UNROLL
@@ -1224,6 +1224,7 @@ struct CollectiveMma<
     int warp_group_idx = __shfl_sync(0xFFFFFFFF, thread_idx / NumThreadsPerWarpGroup, 0);
 
     TiledMma tiled_mma;
+    printf("call here 1.\n");
     auto mma_thread_slice = tiled_mma.get_thread_slice(thread_idx);
     auto mma_warpgroup_slice = tiled_mma.get_slice(warp_group_thread_layout(warp_group_idx));
 
@@ -1262,7 +1263,7 @@ struct CollectiveMma<
     // We release buffers to producer warps(dma load) with some mmas in flight
     // PipelineState smem_pipe_release = smem_pipe_read;
 
-    tiled_mma.accumulate_ = GMMA::ScaleOut::Zero;
+    tiled_mma.accumulate_ = AMMA::ScaleOut::Zero;
 
     TransposeOperandB transpose = cutlass::transform::collective::detail::make_transpose_operand_b(
                                     warp_idx, warp_group_thread_idx, tiled_mma, SmemLayoutB{}, 
@@ -1296,7 +1297,7 @@ struct CollectiveMma<
         warpgroup_arrive();
         // (V,M) x (V,N) => (V,M,N)
         cute::gemm(tiled_mma, tCrA(_,_,k_block), tCrB(_,_,k_block,read_stage), accum);
-        tiled_mma.accumulate_ = GMMA::ScaleOut::One;
+        tiled_mma.accumulate_ = AMMA::ScaleOut::One;
         warpgroup_commit_batch();
       }
 
@@ -1314,7 +1315,7 @@ struct CollectiveMma<
       warpgroup_arrive();
       // (V,M) x (V,N) => (V,M,N)
       cute::gemm(tiled_mma, tCrA(_,_,size<2>(tCrA) - 1), tCrB(_,_,size<2>(tCrA) - 1,read_stage), accum);
-      tiled_mma.accumulate_ = GMMA::ScaleOut::One;
+      tiled_mma.accumulate_ = AMMA::ScaleOut::One;
       warpgroup_commit_batch();
       warpgroup_wait<2>();
     }
@@ -1359,7 +1360,7 @@ struct CollectiveMma<
         warpgroup_arrive();
         // (V,M) x (V,N) => (V,M,N)
         cute::gemm(tiled_mma, tCrA(_,_,k_block), tCrB(_,_,k_block,read_stage), accum);
-        tiled_mma.accumulate_ = GMMA::ScaleOut::One;
+        tiled_mma.accumulate_ = AMMA::ScaleOut::One;
         warpgroup_commit_batch();
         warpgroup_wait<2>();
         if (k_block == 1) {
@@ -1395,7 +1396,7 @@ struct CollectiveMma<
         warpgroup_arrive();
         // (V,M) x (V,N) => (V,M,N)
         cute::gemm(tiled_mma, tCrA(_,_,k_block), tCrB(_,_,k_block,read_stage), accum);
-        tiled_mma.accumulate_ = GMMA::ScaleOut::One;
+        tiled_mma.accumulate_ = AMMA::ScaleOut::One;
         warpgroup_commit_batch();
         warpgroup_wait<2>();
         if (k_block == 1) {
@@ -1408,7 +1409,7 @@ struct CollectiveMma<
       warpgroup_arrive();
       // (V,M) x (V,N) => (V,M,N)
       cute::gemm(tiled_mma, tCrA(_,_,size<2>(tCrA) - 1), tCrB(_,_,size<2>(tCrA) - 1,read_stage), accum);
-      tiled_mma.accumulate_ = GMMA::ScaleOut::One;
+      tiled_mma.accumulate_ = AMMA::ScaleOut::One;
       warpgroup_commit_batch();
       warpgroup_wait<2>();
       // warpgroup_fence_operand(accum);
@@ -1466,6 +1467,7 @@ struct CollectiveMma<
     int warp_group_idx = __shfl_sync(0xFFFFFFFF, thread_idx / NumThreadsPerWarpGroup, 0);
 
     TiledMma tiled_mma;
+    printf("call here 1.\n");
     auto mma_thread_slice = tiled_mma.get_thread_slice(thread_idx);
     auto mma_warpgroup_slice = tiled_mma.get_slice(warp_group_thread_layout(warp_group_idx));
 
@@ -1495,7 +1497,7 @@ struct CollectiveMma<
     // We release buffers to producer warps(dma load) with some mmas in flight
     // PipelineState smem_pipe_release = smem_pipe_read;
 
-    tiled_mma.accumulate_ = GMMA::ScaleOut::Zero;
+    tiled_mma.accumulate_ = AMMA::ScaleOut::Zero;
 
     TransposeOperandB transpose = cutlass::transform::collective::detail::make_transpose_operand_b(
                                     warp_idx, warp_group_thread_idx, tiled_mma, SmemLayoutB{}, 
@@ -1532,7 +1534,7 @@ struct CollectiveMma<
         warpgroup_arrive();
         // (V,M) x (V,N) => (V,M,N)
         cute::gemm(tiled_mma, tCrA(_,_,k_block), tCrB(_,_,k_block,read_stage), accum);
-        tiled_mma.accumulate_ = GMMA::ScaleOut::One;
+        tiled_mma.accumulate_ = AMMA::ScaleOut::One;
         warpgroup_commit_batch();
       }
 
@@ -1541,7 +1543,7 @@ struct CollectiveMma<
       warpgroup_arrive();
       // (V,M) x (V,N) => (V,M,N)
       cute::gemm(tiled_mma, tCrA(_,_,size<2>(tCrA) - 1), tCrB(_,_,size<2>(tCrA) - 1,read_stage), accum);
-      tiled_mma.accumulate_ = GMMA::ScaleOut::One;
+      tiled_mma.accumulate_ = AMMA::ScaleOut::One;
       warpgroup_commit_batch();
       warpgroup_wait<2>();
     }
@@ -1583,7 +1585,7 @@ struct CollectiveMma<
         warpgroup_arrive();
         // (V,M) x (V,N) => (V,M,N)
         cute::gemm(tiled_mma, tCrA(_,_,k_block), tCrB(_,_,k_block,read_stage), accum);
-        tiled_mma.accumulate_ = GMMA::ScaleOut::One;
+        tiled_mma.accumulate_ = AMMA::ScaleOut::One;
         warpgroup_commit_batch();
         warpgroup_wait<2>();
         if (k_block == 1) {
@@ -1617,7 +1619,7 @@ struct CollectiveMma<
         warpgroup_arrive();
         // (V,M) x (V,N) => (V,M,N)
         cute::gemm(tiled_mma, tCrA(_,_,k_block), tCrB(_,_,k_block,read_stage), accum);
-        tiled_mma.accumulate_ = GMMA::ScaleOut::One;
+        tiled_mma.accumulate_ = AMMA::ScaleOut::One;
         warpgroup_commit_batch();
         warpgroup_wait<2>();
         if (k_block == 1) {
@@ -1630,7 +1632,7 @@ struct CollectiveMma<
       warpgroup_arrive();
       // (V,M) x (V,N) => (V,M,N)
       cute::gemm(tiled_mma, tCrA(_,_,size<2>(tCrA) - 1), tCrB(_,_,size<2>(tCrA) - 1,read_stage), accum);
-      tiled_mma.accumulate_ = GMMA::ScaleOut::One;
+      tiled_mma.accumulate_ = AMMA::ScaleOut::One;
       warpgroup_commit_batch();
       warpgroup_wait<2>();
     }

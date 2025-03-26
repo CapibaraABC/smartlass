@@ -40,6 +40,7 @@
 #include <cute/atom/mma_traits.hpp>            // cute::MMA_Traits
 #include <cute/layout_composed.hpp>            // cute::ComposedLayout
 #include <cute/numeric/integral_constant.hpp>  // cute::is_static
+#include <cute/arch/mma_aurora.hpp>
 
 namespace cute {
 
@@ -394,9 +395,9 @@ mma_unpack(MMA_Traits<MMA_Op, MMA_Args...> const& traits,
            Tensor<TB, BLayout> const& B,
            Tensor<TC, CLayout> const& C)
 {
-    if(threadIdx.x == 0 && blockIdx.x == 0){
-        printf("call AURORA::AMMA::mma_unpack again and agian.\n");
-      }
+    // if(threadIdx.x == 0 && blockIdx.x == 0){
+    //     printf("call AURORA::AMMA::mma_unpack again and agian.\n");
+    //   }
   static_assert(is_rmem<TD>::value, "Expected registers in MMA_Atom::call");
   static_assert(is_rmem<TA>::value, "Expected registers in MMA_Atom::call");
   static_assert(is_rmem<TB>::value, "Expected registers in MMA_Atom::call");
@@ -442,10 +443,10 @@ mma_unpack(MMA_Traits<MMA_Op, MMA_Args...> const& traits,
   auto MatrixB = reinterpret_cast<void*>(addressB);
   auto MatrixC = C.data();                           //C.data is the const cutlass::half_t* const type
 
-  if(threadIdx.x == 0 && blockIdx.x == 0){
-    printf("m:%u, n:%u, k:%u\n", m, n, k);
-    printf("in mma_unpack, MatrixA:%p, MatrixB:%p, MatrixC:%p\n", MatrixA, MatrixB, MatrixC);
-  } 
+  // if(threadIdx.x == 0 && blockIdx.x == 0){
+  //   printf("m:%u, n:%u, k:%u\n", m, n, k);
+  //   printf("in mma_unpack, MatrixA:%p, MatrixB:%p, MatrixC:%p\n", MatrixA, MatrixB, MatrixC);
+  // } 
 
   detail::explode_tuple(MMA_Op::gemm_cal,
                         make_tuple(alpha), seq<0>{},

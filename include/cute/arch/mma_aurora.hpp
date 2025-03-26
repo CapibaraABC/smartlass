@@ -71,8 +71,8 @@ struct MMA_16x8x4_F64F64F64F64_TN
       "{%7,  %8,  %9,  %10};\n"
       : "=d"(d0), "=d"(d1), "=d"(d2), "=d"(d3)
       :  "d"(a0),  "d"(a1),
-         "d"(b0),
-         "d"(c0),  "d"(c1),  "d"(c2),  "d"(c3));
+        "d"(b0),
+        "d"(c0),  "d"(c1),  "d"(c2),  "d"(c3));
 #else
     CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_16x8x4_F64F64F64F64_TN without CUTE_ARCH_MMA_SM90_ENABLED");
 #endif
@@ -104,8 +104,8 @@ struct MMA_16x8x8_F64F64F64F64_TN
       "{%10, %11, %12, %13};\n"
       : "=d"(d0), "=d"(d1), "=d"(d2), "=d"(d3)
       :  "d"(a0),  "d"(a1),  "d"(a2),  "d"(a3),
-         "d"(b0),  "d"(b1),
-         "d"(c0),  "d"(c1),  "d"(c2),  "d"(c3));
+        "d"(b0),  "d"(b1),
+        "d"(c0),  "d"(c1),  "d"(c2),  "d"(c3));
 #else
     CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_16x8x8_F64F64F64F64_TN without CUTE_ARCH_MMA_SM90_ENABLED");
 #endif
@@ -138,9 +138,9 @@ struct MMA_16x8x16_F64F64F64F64_TN
       "{%16, %17, %18, %19};\n"
       : "=d"(d0), "=d"(d1), "=d"(d2), "=d"(d3)
       :  "d"(a0),  "d"(a1),  "d"(a2),  "d"(a3),
-         "d"(a4),  "d"(a5),  "d"(a6),  "d"(a7),
-         "d"(b0),  "d"(b1),  "d"(b2),  "d"(b3),
-         "d"(c0),  "d"(c1),  "d"(c2),  "d"(c3));
+        "d"(a4),  "d"(a5),  "d"(a6),  "d"(a7),
+        "d"(b0),  "d"(b1),  "d"(b2),  "d"(b3),
+        "d"(c0),  "d"(c1),  "d"(c2),  "d"(c3));
 #else
     CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_16x8x16_F64F64F64F64_TN without CUTE_ARCH_MMA_SM90_ENABLED");
 #endif
@@ -341,8 +341,8 @@ struct MMA_16x8x16_C64C64C64C64_TN
 //#include <cute/arch/mma_sm90_desc.hpp>
 //#include <cute/arch/mma_sm90_AMMA.hpp>
 #include <cute/arch/mma_aurora_desc.hpp>
-#include <cute/arch/mma_aurora_AMMA.hpp>
-#include <cute/arch/mma_sm90_AMMA_sparse.hpp>
+#include <cute/arch/mma_aurora_gmma.hpp>
+#include <cute/arch/mma_sm90_gmma_sparse.hpp>
 #include <cute/layout.hpp>                     // cute::size
 #include <cute/numeric/integral_constant.hpp>  // cute::is_static
 #include <cute/numeric/numeric_types.hpp>      // cute::half_t, cute::float_e4m3_t, cute::tfloat32_t, etc
@@ -361,17 +361,20 @@ template <
   AMMA::Major MajorA = AMMA::Major::K,
   AMMA::Major MajorB = AMMA::Major::K,
   auto... Args                         // e.g. AMMA::ScaleOut::One, [AMMA::ScaleIn::One, AMMA::ScaleIn::One]
-                                       // But most commonly leave empty for defaults
+                                      // But most commonly leave empty for defaults
 >
 CUTE_HOST_DEVICE constexpr
 auto
-ss_op_selector()
+aurora_ss_op_selector()
 {
   static_assert(is_static<TileShape_MNK>::value, "TileShape_MNK must be static.");
   static_assert(rank(TileShape_MNK{}) == 3, "TileShape_MNK must be rank 3.");
   static_assert(size<0>(TileShape_MNK{}) % 64 == 0, "Tile_M must be a multiple of 64.");
   auto Tile_N = size<1>(TileShape_MNK{});
 
+  return AURORA::AMMA::MMA_Aurora_64x64x16_F16F16F16_SS<MajorA, MajorB, Args...>{};
+
+  /*
   // F16 accumulator
   if constexpr (is_same_v<ElementC, half_t>) {
 
@@ -989,6 +992,7 @@ ss_op_selector()
   else {
     static_assert(sizeof(ElementC) == 0, "Unknown ElementC accumulator type.");
   }
+  */
 }
 
 

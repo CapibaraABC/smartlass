@@ -40,7 +40,7 @@
 #include "cutlass/gemm/gemm.h"
 #include "cutlass/gemm/dispatch_policy.hpp"
 #include "cutlass/gemm/kernel/sm90_tile_scheduler.hpp"
-#include "cutlass/pipeline/pipeline.hpp"
+#include "cutlass/pipeline/ma100_pipeline.hpp"
 #include "cute/tensor.hpp"
 ///////////////////////////////////////////////////////////////////////////////
 

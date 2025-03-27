@@ -27,11 +27,12 @@
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 set(PIPELINE_SOURCES
-  pipeline_tma_async.cu
-  pipeline_tma_async_warp_specialized.cu
-  pipeline_tma_async_warp_specialized_persistent.cu
-  pipeline_async.cu
-  sequence_barrier.cu
+  pipeline_dma_aurora.cu
+  # pipeline_tma_async.cu
+  # pipeline_tma_async_warp_specialized.cu
+  # pipeline_tma_async_warp_specialized_persistent.cu
+  # pipeline_async.cu
+  # sequence_barrier.cu
 )
 
 if (CUTLASS_NVCC_ARCHS MATCHES 100a)

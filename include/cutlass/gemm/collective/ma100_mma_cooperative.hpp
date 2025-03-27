@@ -137,7 +137,7 @@ struct CollectiveMma<
   using TransformB = TransformB_;
   using ArchTag = typename DispatchPolicy::ArchTag;
 
-  using MainloopPipeline = cutlass::PipelineTmaAsync<DispatchPolicy::Stages>;
+  using MainloopPipeline = cutlass::PipelineDmaAuroraAsync<DispatchPolicy::Stages>;
   using PipelineState    = typename MainloopPipeline::PipelineState;
   using PipelineParams   = typename MainloopPipeline::Params;
 
@@ -500,6 +500,10 @@ struct CollectiveMma<
         // LOCK smem_pipe_write for _writing_
         // pipeline.producer_acquire(smem_pipe_write);
 
+        //txl
+        pipeline.producer_acquire(smem_pipe_write);
+
+
         //
         // Copy gmem to smem for *k_tile_iter
         //
@@ -514,6 +518,10 @@ struct CollectiveMma<
 
         // Advance smem_pipe_write
         // ++smem_pipe_write;
+
+        // //txl
+        // pipeline.producer_commit(smem_pipe_write, per_cta_bytes);
+        ++smem_pipe_write;
       }
     }
   }
@@ -534,6 +542,9 @@ struct CollectiveMma<
        * still inverted from make_producer_start_state
        */
       // pipeline.producer_tail(smem_pipe_write);
+      //txl
+      pipeline.producer_tail(smem_pipe_write);
+
     }
   }
 
@@ -614,6 +625,9 @@ struct CollectiveMma<
       // WAIT on smem_pipe_read until its data are available (phase bit flips from rdPhaseBit value)
       // auto barrier_token = pipeline.consumer_try_wait(smem_pipe_read);
       // pipeline.consumer_wait(smem_pipe_read, barrier_token);
+      //txl
+      auto barrier_token = pipeline.consumer_try_wait(smem_pipe_read);
+      pipeline.consumer_wait(smem_pipe_read, barrier_token);
 
       int read_stage = smem_pipe_read.index();
       warpgroup_arrive();
@@ -628,6 +642,10 @@ struct CollectiveMma<
 
       warpgroup_commit_batch();
 
+      // //txl
+      // pipeline.consumer_release(smem_pipe_release);
+      // ++smem_pipe_release;
+
       ++smem_pipe_read;
     }
 
@@ -640,12 +658,20 @@ struct CollectiveMma<
       // WAIT on smem_pipe_read until its data are available (phase bit flips from rdPhaseBit value)
       // auto barrier_token = pipeline.consumer_try_wait(smem_pipe_read);
       // pipeline.consumer_wait(smem_pipe_read, barrier_token);
+      //txl
+      auto barrier_token = pipeline.consumer_try_wait(smem_pipe_read);
+      pipeline.consumer_wait(smem_pipe_read, barrier_token);
 
       int read_stage = smem_pipe_read.index();
       warpgroup_arrive();
       // (V,M,K) x (V,N,K) => (V,M,N)
       cute::gemm(tiled_mma, tCrA(_,_,_,read_stage), tCrB(_,_,_,read_stage), accum);
       warpgroup_commit_batch();
+
+
+      // //txl
+      // pipeline.consumer_release(smem_pipe_release);
+      // ++smem_pipe_release;
 
       ++smem_pipe_read;
     }
@@ -660,6 +686,10 @@ struct CollectiveMma<
       // WAIT on smem_pipe_read until its data are available (phase bit flips from rdPhaseBit value)
       // auto barrier_token = pipeline.consumer_try_wait(smem_pipe_read);
       // pipeline.consumer_wait(smem_pipe_read, barrier_token);
+
+      //txl
+      auto barrier_token = pipeline.consumer_try_wait(smem_pipe_read);
+      pipeline.consumer_wait(smem_pipe_read, barrier_token);
 
       //
       // Compute on k_tile
@@ -678,6 +708,8 @@ struct CollectiveMma<
 
       // UNLOCK smem_pipe_release, done _computing_ on it
       // pipeline.consumer_release(smem_pipe_release);
+      //txl
+      pipeline.consumer_release(smem_pipe_release);
 
       // Advance smem_pipe_read and smem_pipe_release
       ++smem_pipe_read;
@@ -701,6 +733,8 @@ struct CollectiveMma<
 
     for (int count = 0; count < prologue_mma_count; ++count) {
       // pipeline.consumer_release(smem_pipe_release);                 // UNLOCK smem_pipe_release, done _computing_ on it
+      //txl
+      pipeline.consumer_release(smem_pipe_release);
       ++smem_pipe_release;
     }
   }

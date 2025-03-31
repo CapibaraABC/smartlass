@@ -10,6 +10,11 @@
         "array": "cpp",
         "initializer_list": "cpp",
         "regex": "cpp",
-        "utility": "cpp"
+        "utility": "cpp",
+        "random": "cpp",
+        "limits": "cpp",
+        "target": "cpp",
+        "type_traits": "cpp",
+        "atomic": "cpp"
     }
 }

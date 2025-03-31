@@ -445,6 +445,7 @@ struct CollectiveMma<
       TensorStorage& shared_tensors
       ) {
     int lane_predicate = cute::elect_one_sync();
+    uint32_t const per_cta_bytes = sizeof(uint32_t);
 
     if (lane_predicate) {
       Tensor sA = make_tensor(make_smem_ptr(shared_tensors.smem_A.data()), SmemLayoutA{});        // (BLK_M,BLK_K,PIPE)
@@ -494,7 +495,37 @@ struct CollectiveMma<
         }
       }
 
+
+
+
       // Mainloop
+      
+      // //txl
+      // int prologue_mma_count = min(K_PIPE_MAX, k_tile_count);
+
+      // CUTLASS_PRAGMA_NO_UNROLL
+      // for ( int i = 0; i < prologue_mma_count; ++i) {
+      //   // Can also specify stage to commit directly
+
+      //   //
+      //   // Copy gmem to smem for *k_tile_iter
+      //   //
+
+      //   using BarrierType = typename MainloopPipeline::ProducerBarrierType;
+      //   BarrierType* tma_barrier = pipeline.producer_get_barrier(smem_pipe_write);
+
+      //   int write_stage = smem_pipe_write.index();
+      //   copy(mainloop_params.tma_load_a.with(*tma_barrier, mcast_mask_a), tAgA(_,_,_,*k_tile_iter), tAsA(_,_,_,write_stage));
+      //   copy(mainloop_params.tma_load_b.with(*tma_barrier, mcast_mask_b), tBgB(_,_,_,*k_tile_iter), tBsB(_,_,_,write_stage));
+      //   ++k_tile_iter;
+
+
+      //   pipeline.producer_commit(smem_pipe_write, per_cta_bytes);
+      //   ++smem_pipe_write;
+      // }
+
+      // k_tile_count -= prologue_mma_count;
+
       CUTLASS_PRAGMA_NO_UNROLL
       for ( ; k_tile_count > 0; --k_tile_count) {
         // LOCK smem_pipe_write for _writing_
@@ -519,8 +550,8 @@ struct CollectiveMma<
         // Advance smem_pipe_write
         // ++smem_pipe_write;
 
-        // //txl
-        // pipeline.producer_commit(smem_pipe_write, per_cta_bytes);
+        //txl
+        pipeline.producer_commit(smem_pipe_write, per_cta_bytes);
         ++smem_pipe_write;
       }
     }
@@ -642,9 +673,8 @@ struct CollectiveMma<
 
       warpgroup_commit_batch();
 
-      // //txl
-      // pipeline.consumer_release(smem_pipe_release);
-      // ++smem_pipe_release;
+      //txl
+      pipeline.consumer_release(smem_pipe_read);
 
       ++smem_pipe_read;
     }
@@ -669,9 +699,8 @@ struct CollectiveMma<
       warpgroup_commit_batch();
 
 
-      // //txl
-      // pipeline.consumer_release(smem_pipe_release);
-      // ++smem_pipe_release;
+      //txl
+      pipeline.consumer_release(smem_pipe_read);
 
       ++smem_pipe_read;
     }
@@ -735,7 +764,7 @@ struct CollectiveMma<
       // pipeline.consumer_release(smem_pipe_release);                 // UNLOCK smem_pipe_release, done _computing_ on it
       //txl
       pipeline.consumer_release(smem_pipe_release);
-      ++smem_pipe_release;
+
     }
   }
 

@@ -34,7 +34,6 @@
 
 #pragma once
 
-#include <atomic>
 #include <iostream>
 #include <cstdint>
 #include <cuda_runtime.h>
@@ -698,491 +697,212 @@ class NamedBarrier {
 //txl
 // 用于模拟同步的纯 C++ 版本，不涉及实际阻塞，只更新计数器并打印日志。
 
-// //=================== ClusterBarrier ===========================
-// struct ClusterBarrier {
-// public:
-//     using ValueType = uint64_t;
-
-// protected:
-//     // 计数器（此处为了模拟使用普通变量；实际多线程环境下可使用std::atomic）
-//     mutable ValueType barrier_;
-
-// public:
-//     // 默认构造函数（原始代码禁止直接构造，但这里为了测试允许构造）
-//     ClusterBarrier(uint32_t init_count = 0) : barrier_(init_count) {}
-
-//     // 动态成员函数
-
-//     // 初始化：设置计数器为 arrive_count
-//     void init(uint32_t arrive_count) const {
-//         barrier_ = 100;
-//         std::cout << "[Dynamic] ClusterBarrier::init set barrier_ to " << barrier_ << std::endl;
-//     }
-
-//     // 测试等待：如果计数器等于 phase 则返回 true，否则返回 false
-//     bool test_wait(uint32_t phase, uint32_t pred = true) const {
-//         bool result = (pred && (barrier_ == phase));
-//         std::cout << "[Dynamic] ClusterBarrier::test_wait: phase = " << phase 
-//                   << ", barrier_ = " << barrier_ 
-//                   << ", result = " << (result ? "true" : "false") << std::endl;
-//         return result;
-//     }
-
-//     // 尝试等待（非阻塞）：如果计数器等于 phase 则返回 true，否则返回 false
-//     bool try_wait(uint32_t phase) const {
-//         bool result = (barrier_ == phase);
-//         std::cout << "[Dynamic] ClusterBarrier::try_wait: phase = " << phase 
-//                   << ", barrier_ = " << barrier_ 
-//                   << ", result = " << (result ? "true" : "false") << std::endl;
-//         return result;
-//     }
-
-//     // wait()：不阻塞，仅打印当前计数（模拟等待）
-//     void wait(uint32_t phase) const {
-//         std::cout << "[Dynamic] ClusterBarrier::wait called with phase = " << phase 
-//                   << ", current barrier_ = " << barrier_ << std::endl;
-//     }
-
-//     // arrive()：计数器加 1，并打印
-//     void arrive() const {
-//         ++barrier_;
-//         std::cout << "[Dynamic] ClusterBarrier::arrive, new barrier_ = " << barrier_ << std::endl;
-//     }
-
-//     // 带条件的到达：如果 pred 为 true，则计数器加 1，并打印 cta_id 信息
-//     void arrive(uint32_t cta_id, uint32_t pred = true) const {
-//         if (pred) {
-//             ++barrier_;
-//             std::cout << "[Dynamic] ClusterBarrier::arrive for cta_id " << cta_id 
-//                       << ", new barrier_ = " << barrier_ << std::endl;
-//         } else {
-//             std::cout << "[Dynamic] ClusterBarrier::arrive for cta_id " << cta_id 
-//                       << " skipped due to pred false" << std::endl;
-//         }
-//     }
-
-//     //=================== 静态版本 ===========================
-//     // 这些函数操作一个指向 ValueType 的指针
-
-//     static void init(ValueType* smem_ptr, uint32_t arrive_count) {
-//         *smem_ptr = arrive_count;
-//         std::cout << "[Static] ClusterBarrier::init set *smem_ptr to " << *smem_ptr << std::endl;
-//     }
-
-//     static void wait(ValueType* smem_ptr, uint32_t phase) {
-//         std::cout << "[Static] ClusterBarrier::wait called with phase = " << phase 
-//                   << ", *smem_ptr = " << *smem_ptr << std::endl;
-//     }
-
-//     static bool test_wait(ValueType* smem_ptr, uint32_t phase, uint32_t pred) {
-//         bool result = (pred && (*smem_ptr == phase));
-//         std::cout << "[Static] ClusterBarrier::test_wait: phase = " << phase 
-//                   << ", *smem_ptr = " << *smem_ptr 
-//                   << ", result = " << (result ? "true" : "false") << std::endl;
-//         return result;
-//     }
-
-//     static bool try_wait(ValueType* smem_ptr, uint32_t phase) {
-//         bool result = (*smem_ptr == phase);
-//         std::cout << "[Static] ClusterBarrier::try_wait: phase = " << phase 
-//                   << ", *smem_ptr = " << *smem_ptr 
-//                   << ", result = " << (result ? "true" : "false") << std::endl;
-//         return result;
-//     }
-
-//     static void arrive(ValueType* smem_ptr) {
-//         ++(*smem_ptr);
-//         std::cout << "[Static] ClusterBarrier::arrive, new *smem_ptr = " << *smem_ptr << std::endl;
-//     }
-
-//     static void arrive(ValueType* smem_ptr, uint32_t cta_id, uint32_t pred = true) {
-//         if (pred) {
-//             ++(*smem_ptr);
-//             std::cout << "[Static] ClusterBarrier::arrive for cta_id " << cta_id 
-//                       << ", new *smem_ptr = " << *smem_ptr << std::endl;
-//         } else {
-//             std::cout << "[Static] ClusterBarrier::arrive for cta_id " << cta_id 
-//                       << " skipped due to pred false" << std::endl;
-//         }
-//     }
-
-//     static void invalidate(ValueType* smem_ptr) {
-//         *smem_ptr = 0;
-//         std::cout << "[Static] ClusterBarrier::invalidate set *smem_ptr to " << *smem_ptr << std::endl;
-//     }
-// };
-
-// //=================== ClusterTransactionBarrier ===========================
-// // 继承自 ClusterBarrier，增加事务字节计数相关的操作
-// struct ClusterTransactionBarrier : public ClusterBarrier {
-//     // 构造函数
-//     ClusterTransactionBarrier(uint32_t arrive_count = 0) : ClusterBarrier(arrive_count) {}
-
-//     // 动态成员：到达并期待事务字节数增加
-//     void arrive_and_expect_tx(uint32_t transaction_bytes) const {
-//         barrier_ += transaction_bytes;
-//         std::cout << "[Dynamic] ClusterTransactionBarrier::arrive_and_expect_tx: added " 
-//                   << transaction_bytes << " bytes, new barrier_ = " << barrier_ << std::endl;
-//     }
-
-//     // 带条件的版本
-//     void arrive_and_expect_tx(uint32_t transaction_bytes, uint32_t cta_id, uint32_t pred = true) const {
-//         if (pred) {
-//             barrier_ += transaction_bytes;
-//             std::cout << "[Dynamic] ClusterTransactionBarrier::arrive_and_expect_tx for cta_id " 
-//                       << cta_id << ": added " << transaction_bytes << " bytes, new barrier_ = " << barrier_ << std::endl;
-//         } else {
-//             std::cout << "[Dynamic] ClusterTransactionBarrier::arrive_and_expect_tx for cta_id " 
-//                       << cta_id << " skipped due to pred false" << std::endl;
-//         }
-//     }
-
-//     // 动态成员：期待事务（仅增加计数器，不到达）
-//     void expect_transaction(uint32_t transaction_bytes) const {
-//         barrier_ += transaction_bytes;
-//         std::cout << "[Dynamic] ClusterTransactionBarrier::expect_transaction: added " 
-//                   << transaction_bytes << " bytes, new barrier_ = " << barrier_ << std::endl;
-//     }
-
-//     // 动态成员：完成事务（减少计数器）
-//     void complete_transaction(uint32_t transaction_bytes, uint32_t pred = 1) const {
-//         if (pred) {
-//             barrier_ -= transaction_bytes;
-//             std::cout << "[Dynamic] ClusterTransactionBarrier::complete_transaction: subtracted " 
-//                       << transaction_bytes << " bytes, new barrier_ = " << barrier_ << std::endl;
-//         } else {
-//             std::cout << "[Dynamic] ClusterTransactionBarrier::complete_transaction skipped due to pred false" << std::endl;
-//         }
-//     }
-
-//     // 带条件的完成事务，指定目标 cta_id
-//     void complete_transaction(uint32_t dst_cta_id, uint32_t transaction_bytes, uint32_t pred) const {
-//         if (pred) {
-//             barrier_ -= transaction_bytes;
-//             std::cout << "[Dynamic] ClusterTransactionBarrier::complete_transaction for dst_cta_id " 
-//                       << dst_cta_id << ": subtracted " << transaction_bytes 
-//                       << " bytes, new barrier_ = " << barrier_ << std::endl;
-//         } else {
-//             std::cout << "[Dynamic] ClusterTransactionBarrier::complete_transaction for dst_cta_id " 
-//                       << dst_cta_id << " skipped due to pred false" << std::endl;
-//         }
-//     }
-
-//     //=================== 静态版本 ===========================
-//     static void arrive_and_expect_tx(ValueType* smem_ptr, uint32_t transaction_bytes) {
-//         *smem_ptr += transaction_bytes;
-//         std::cout << "[Static] ClusterTransactionBarrier::arrive_and_expect_tx: added " 
-//                   << transaction_bytes << " bytes, new *smem_ptr = " << *smem_ptr << std::endl;
-//     }
-
-//     static void arrive_and_expect_tx(ValueType* smem_ptr, uint32_t transaction_bytes, uint32_t cta_id, uint32_t pred) {
-//         if (pred) {
-//             *smem_ptr += transaction_bytes;
-//             std::cout << "[Static] ClusterTransactionBarrier::arrive_and_expect_tx for cta_id " 
-//                       << cta_id << ": added " << transaction_bytes << " bytes, new *smem_ptr = " << *smem_ptr << std::endl;
-//         } else {
-//             std::cout << "[Static] ClusterTransactionBarrier::arrive_and_expect_tx for cta_id " 
-//                       << cta_id << " skipped due to pred false" << std::endl;
-//         }
-//     }
-
-//     static void expect_transaction(ValueType* smem_ptr, uint32_t transaction_bytes) {
-//         *smem_ptr += transaction_bytes;
-//         std::cout << "[Static] ClusterTransactionBarrier::expect_transaction: added " 
-//                   << transaction_bytes << " bytes, new *smem_ptr = " << *smem_ptr << std::endl;
-//     }
-
-//     static void complete_transaction(ValueType* smem_ptr, uint32_t dst_cta_id, uint32_t transaction_bytes, uint32_t pred = 1) {
-//         if (pred) {
-//             *smem_ptr -= transaction_bytes;
-//             std::cout << "[Static] ClusterTransactionBarrier::complete_transaction for dst_cta_id " 
-//                       << dst_cta_id << ": subtracted " << transaction_bytes 
-//                       << " bytes, new *smem_ptr = " << *smem_ptr << std::endl;
-//         } else {
-//             std::cout << "[Static] ClusterTransactionBarrier::complete_transaction for dst_cta_id " 
-//                       << dst_cta_id << " skipped due to pred false" << std::endl;
-//         }
-//     }
-    
-//     //=================== DEPRECATED APIs ===========================
-//     [[deprecated("Use arrive_and_expect_tx instead")]]
-//     void arrive_and_reset_bytes(uint32_t transaction_bytes) const {
-//         arrive_and_expect_tx(transaction_bytes);
-//     }
-//     [[deprecated("Use arrive_and_expect_tx instead")]]
-//     void arrive_and_reset_bytes(uint32_t transaction_bytes, uint32_t cta_id) const {
-//         arrive_and_expect_tx(transaction_bytes, cta_id);
-//     }
-//     [[deprecated("Use expect_transaction instead")]]
-//     void reset_bytes(uint32_t transaction_bytes) const {
-//         expect_transaction(transaction_bytes);
-//     }
-//     [[deprecated("Use complete_transaction instead")]]
-//     void commit(uint32_t transaction_bytes, uint32_t pred = 1) const {
-//         complete_transaction(transaction_bytes, pred);
-//     }
-//     [[deprecated("Use complete_transaction instead")]]
-//     void commit(uint32_t dst_cta_id, uint32_t transaction_bytes, uint32_t pred) const {
-//         complete_transaction(dst_cta_id, transaction_bytes, pred);
-//     }
-//     [[deprecated("Use arrive_and_expect_tx instead")]]
-//     static void arrive_and_reset_bytes(ValueType* smem_ptr, uint32_t transaction_bytes) {
-//         arrive_and_expect_tx(smem_ptr, transaction_bytes);
-//     }
-//     [[deprecated("Use arrive_and_expect_tx instead")]]
-//     static void arrive_and_reset_bytes(ValueType* smem_ptr, uint32_t transaction_bytes, uint32_t cta_id, uint32_t pred) {
-//         arrive_and_expect_tx(smem_ptr, transaction_bytes, cta_id, pred);
-//     }
-//     [[deprecated("Use expect_transaction instead")]]
-//     static void reset_bytes(ValueType* smem_ptr, uint32_t transaction_bytes) {
-//         expect_transaction(smem_ptr, transaction_bytes);
-//     }
-//     [[deprecated("Use complete_transaction instead")]]
-//     static void commit(ValueType* smem_ptr, uint32_t dst_cta_id, uint32_t transaction_bytes, uint32_t pred = 1) {
-//         complete_transaction(smem_ptr, dst_cta_id, transaction_bytes, pred);
-//     }
-// };
-
-// // 辅助函数，用于模拟 barrier 初始化的fence（仅打印日志，不阻塞）
-// void fence_barrier_init() {
-//     std::cout << "[Host] fence_barrier_init called." << std::endl;
-// }
-
-
-
-
 //=================== ClusterBarrier ===========================
 struct ClusterBarrier {
 public:
     using ValueType = uint64_t;
 
 protected:
-    // 使用 std::atomic 替代普通变量，确保线程安全
-    mutable std::atomic<ValueType> barrier_;
+    // 计数器（此处为了模拟使用普通变量；实际多线程环境下可使用std::atomic）
+    mutable ValueType barrier_;
 
 public:
-    // 默认构造函数，使用 std::atomic 初始化
-    ClusterBarrier(uint32_t init_count = 10) : barrier_(init_count) {}
+    // 默认构造函数（原始代码禁止直接构造，但这里为了测试允许构造）
+    ClusterBarrier(uint32_t init_count = 0) : barrier_(init_count) {}
 
     // 动态成员函数
 
-    // 初始化：原子设置计数器为 arrive_count
+    // 初始化：设置计数器为 arrive_count
     void init(uint32_t arrive_count) const {
-        barrier_.store(10, std::memory_order_relaxed);  // 原代码固定为 10
-        std::cout << "[Dynamic] ClusterBarrier::init set barrier_ to " << barrier_.load(std::memory_order_relaxed) << std::endl;
+        barrier_ = arrive_count;
+        std::cout << "[Dynamic] ClusterBarrier::init set barrier_ to " << barrier_ << std::endl;
     }
 
     // 测试等待：如果计数器等于 phase 则返回 true，否则返回 false
     bool test_wait(uint32_t phase, uint32_t pred = true) const {
-        ValueType current_barrier = barrier_.load(std::memory_order_relaxed);
-        bool result = (pred && (current_barrier == phase));
+        bool result = (pred && (barrier_ == phase));
         std::cout << "[Dynamic] ClusterBarrier::test_wait: phase = " << phase 
-                  << ", barrier_ = " << current_barrier 
+                  << ", barrier_ = " << barrier_ 
                   << ", result = " << (result ? "true" : "false") << std::endl;
         return result;
     }
 
     // 尝试等待（非阻塞）：如果计数器等于 phase 则返回 true，否则返回 false
     bool try_wait(uint32_t phase) const {
-        ValueType current_barrier = barrier_.load(std::memory_order_relaxed);
-        bool result = (current_barrier == phase);
+        bool result = (barrier_ == phase);
         std::cout << "[Dynamic] ClusterBarrier::try_wait: phase = " << phase 
-                  << ", barrier_ = " << current_barrier 
+                  << ", barrier_ = " << barrier_ 
                   << ", result = " << (result ? "true" : "false") << std::endl;
         return result;
     }
 
     // wait()：不阻塞，仅打印当前计数（模拟等待）
     void wait(uint32_t phase) const {
-        ValueType current_barrier = barrier_.load(std::memory_order_relaxed);
         std::cout << "[Dynamic] ClusterBarrier::wait called with phase = " << phase 
-                  << ", current barrier_ = " << current_barrier << std::endl;
+                  << ", current barrier_ = " << barrier_ << std::endl;
     }
 
-    // arrive()：原子计数器加 1，并打印
+    // arrive()：计数器加 1，并打印
     void arrive() const {
-        ValueType old_value = barrier_.fetch_add(1, std::memory_order_relaxed);
-        ValueType new_value = old_value + 1;
-        std::cout << "[Dynamic] ClusterBarrier::arrive, new barrier_ = " << new_value << std::endl;
+        ++barrier_;
+        std::cout << "[Dynamic] ClusterBarrier::arrive, new barrier_ = " << barrier_ << std::endl;
     }
 
-    // 带条件的到达：如果 pred 为 true，则原子计数器加 1，并打印 cta_id 信息
+    // 带条件的到达：如果 pred 为 true，则计数器加 1，并打印 cta_id 信息
     void arrive(uint32_t cta_id, uint32_t pred = true) const {
         if (pred) {
-            ValueType old_value = barrier_.fetch_add(1, std::memory_order_relaxed);
-            ValueType new_value = old_value + 1;
+            ++barrier_;
             std::cout << "[Dynamic] ClusterBarrier::arrive for cta_id " << cta_id 
-                      << ", new barrier_ = " << new_value << std::endl;
+                      << ", new barrier_ = " << barrier_ << std::endl;
         } else {
-            ValueType current_barrier = barrier_.load(std::memory_order_relaxed);
             std::cout << "[Dynamic] ClusterBarrier::arrive for cta_id " << cta_id 
-                      << " skipped due to pred false, current barrier_ = " << current_barrier << std::endl;
+                      << " skipped due to pred false" << std::endl;
         }
     }
 
     //=================== 静态版本 ===========================
-    // 这些函数操作一个指向 std::atomic<ValueType> 的指针
+    // 这些函数操作一个指向 ValueType 的指针
 
-    static void init(std::atomic<ValueType>* smem_ptr, uint32_t arrive_count) {
-        smem_ptr->store(arrive_count, std::memory_order_relaxed);
-        std::cout << "[Static] ClusterBarrier::init set *smem_ptr to " << smem_ptr->load(std::memory_order_relaxed) << std::endl;
+    static void init(ValueType* smem_ptr, uint32_t arrive_count) {
+        *smem_ptr = arrive_count;
+        std::cout << "[Static] ClusterBarrier::init set *smem_ptr to " << *smem_ptr << std::endl;
     }
 
-    static void wait(std::atomic<ValueType>* smem_ptr, uint32_t phase) {
-        ValueType current_smem = smem_ptr->load(std::memory_order_relaxed);
+    static void wait(ValueType* smem_ptr, uint32_t phase) {
         std::cout << "[Static] ClusterBarrier::wait called with phase = " << phase 
-                  << ", *smem_ptr = " << current_smem << std::endl;
+                  << ", *smem_ptr = " << *smem_ptr << std::endl;
     }
 
-    static bool test_wait(std::atomic<ValueType>* smem_ptr, uint32_t phase, uint32_t pred) {
-        ValueType current_smem = smem_ptr->load(std::memory_order_relaxed);
-        bool result = (pred && (current_smem == phase));
+    static bool test_wait(ValueType* smem_ptr, uint32_t phase, uint32_t pred) {
+        bool result = (pred && (*smem_ptr == phase));
         std::cout << "[Static] ClusterBarrier::test_wait: phase = " << phase 
-                  << ", *smem_ptr = " << current_smem 
+                  << ", *smem_ptr = " << *smem_ptr 
                   << ", result = " << (result ? "true" : "false") << std::endl;
         return result;
     }
 
-    static bool try_wait(std::atomic<ValueType>* smem_ptr, uint32_t phase) {
-        ValueType current_smem = smem_ptr->load(std::memory_order_relaxed);
-        bool result = (current_smem == phase);
+    static bool try_wait(ValueType* smem_ptr, uint32_t phase) {
+        bool result = (*smem_ptr == phase);
         std::cout << "[Static] ClusterBarrier::try_wait: phase = " << phase 
-                  << ", *smem_ptr = " << current_smem 
+                  << ", *smem_ptr = " << *smem_ptr 
                   << ", result = " << (result ? "true" : "false") << std::endl;
         return result;
     }
 
-    static void arrive(std::atomic<ValueType>* smem_ptr) {
-        ValueType old_value = smem_ptr->fetch_add(1, std::memory_order_relaxed);
-        ValueType new_value = old_value + 1;
-        std::cout << "[Static] ClusterBarrier::arrive, new *smem_ptr = " << new_value << std::endl;
+    static void arrive(ValueType* smem_ptr) {
+        ++(*smem_ptr);
+        std::cout << "[Static] ClusterBarrier::arrive, new *smem_ptr = " << *smem_ptr << std::endl;
     }
 
-    static void arrive(std::atomic<ValueType>* smem_ptr, uint32_t cta_id, uint32_t pred = true) {
+    static void arrive(ValueType* smem_ptr, uint32_t cta_id, uint32_t pred = true) {
         if (pred) {
-            ValueType old_value = smem_ptr->fetch_add(1, std::memory_order_relaxed);
-            ValueType new_value = old_value + 1;
+            ++(*smem_ptr);
             std::cout << "[Static] ClusterBarrier::arrive for cta_id " << cta_id 
-                      << ", new *smem_ptr = " << new_value << std::endl;
+                      << ", new *smem_ptr = " << *smem_ptr << std::endl;
         } else {
-            ValueType current_smem = smem_ptr->load(std::memory_order_relaxed);
             std::cout << "[Static] ClusterBarrier::arrive for cta_id " << cta_id 
-                      << " skipped due to pred false, current *smem_ptr = " << current_smem << std::endl;
+                      << " skipped due to pred false" << std::endl;
         }
     }
 
-    static void invalidate(std::atomic<ValueType>* smem_ptr) {
-        smem_ptr->store(0, std::memory_order_relaxed);
-        std::cout << "[Static] ClusterBarrier::invalidate set *smem_ptr to " << smem_ptr->load(std::memory_order_relaxed) << std::endl;
+    static void invalidate(ValueType* smem_ptr) {
+        *smem_ptr = 0;
+        std::cout << "[Static] ClusterBarrier::invalidate set *smem_ptr to " << *smem_ptr << std::endl;
     }
 };
 
 //=================== ClusterTransactionBarrier ===========================
+// 继承自 ClusterBarrier，增加事务字节计数相关的操作
 struct ClusterTransactionBarrier : public ClusterBarrier {
     // 构造函数
     ClusterTransactionBarrier(uint32_t arrive_count = 0) : ClusterBarrier(arrive_count) {}
 
     // 动态成员：到达并期待事务字节数增加
     void arrive_and_expect_tx(uint32_t transaction_bytes) const {
-        ValueType old_value = barrier_.fetch_add(transaction_bytes, std::memory_order_relaxed);
-        ValueType new_value = old_value + transaction_bytes;
+        barrier_ += transaction_bytes;
         std::cout << "[Dynamic] ClusterTransactionBarrier::arrive_and_expect_tx: added " 
-                  << transaction_bytes << " bytes, new barrier_ = " << new_value << std::endl;
+                  << transaction_bytes << " bytes, new barrier_ = " << barrier_ << std::endl;
     }
 
     // 带条件的版本
     void arrive_and_expect_tx(uint32_t transaction_bytes, uint32_t cta_id, uint32_t pred = true) const {
         if (pred) {
-            ValueType old_value = barrier_.fetch_add(transaction_bytes, std::memory_order_relaxed);
-            ValueType new_value = old_value + transaction_bytes;
+            barrier_ += transaction_bytes;
             std::cout << "[Dynamic] ClusterTransactionBarrier::arrive_and_expect_tx for cta_id " 
-                      << cta_id << ": added " << transaction_bytes << " bytes, new barrier_ = " << new_value << std::endl;
+                      << cta_id << ": added " << transaction_bytes << " bytes, new barrier_ = " << barrier_ << std::endl;
         } else {
-            ValueType current_barrier = barrier_.load(std::memory_order_relaxed);
             std::cout << "[Dynamic] ClusterTransactionBarrier::arrive_and_expect_tx for cta_id " 
-                      << cta_id << " skipped due to pred false, current barrier_ = " << current_barrier << std::endl;
+                      << cta_id << " skipped due to pred false" << std::endl;
         }
     }
 
     // 动态成员：期待事务（仅增加计数器，不到达）
     void expect_transaction(uint32_t transaction_bytes) const {
-        ValueType old_value = barrier_.fetch_add(transaction_bytes, std::memory_order_relaxed);
-        ValueType new_value = old_value + transaction_bytes;
+        barrier_ += transaction_bytes;
         std::cout << "[Dynamic] ClusterTransactionBarrier::expect_transaction: added " 
-                  << transaction_bytes << " bytes, new barrier_ = " << new_value << std::endl;
+                  << transaction_bytes << " bytes, new barrier_ = " << barrier_ << std::endl;
     }
 
     // 动态成员：完成事务（减少计数器）
     void complete_transaction(uint32_t transaction_bytes, uint32_t pred = 1) const {
         if (pred) {
-            ValueType old_value = barrier_.fetch_sub(transaction_bytes, std::memory_order_relaxed);
-            ValueType new_value = old_value - transaction_bytes;
+            barrier_ -= transaction_bytes;
             std::cout << "[Dynamic] ClusterTransactionBarrier::complete_transaction: subtracted " 
-                      << transaction_bytes << " bytes, new barrier_ = " << new_value << std::endl;
+                      << transaction_bytes << " bytes, new barrier_ = " << barrier_ << std::endl;
         } else {
-            ValueType current_barrier = barrier_.load(std::memory_order_relaxed);
-            std::cout << "[Dynamic] ClusterTransactionBarrier::complete_transaction skipped due to pred false, current barrier_ = " 
-                      << current_barrier << std::endl;
+            std::cout << "[Dynamic] ClusterTransactionBarrier::complete_transaction skipped due to pred false" << std::endl;
         }
     }
 
     // 带条件的完成事务，指定目标 cta_id
     void complete_transaction(uint32_t dst_cta_id, uint32_t transaction_bytes, uint32_t pred) const {
         if (pred) {
-            ValueType old_value = barrier_.fetch_sub(transaction_bytes, std::memory_order_relaxed);
-            ValueType new_value = old_value - transaction_bytes;
+            barrier_ -= transaction_bytes;
             std::cout << "[Dynamic] ClusterTransactionBarrier::complete_transaction for dst_cta_id " 
                       << dst_cta_id << ": subtracted " << transaction_bytes 
-                      << " bytes, new barrier_ = " << new_value << std::endl;
+                      << " bytes, new barrier_ = " << barrier_ << std::endl;
         } else {
-            ValueType current_barrier = barrier_.load(std::memory_order_relaxed);
             std::cout << "[Dynamic] ClusterTransactionBarrier::complete_transaction for dst_cta_id " 
-                      << dst_cta_id << " skipped due to pred false, current barrier_ = " << current_barrier << std::endl;
+                      << dst_cta_id << " skipped due to pred false" << std::endl;
         }
     }
 
     //=================== 静态版本 ===========================
-    static void arrive_and_expect_tx(std::atomic<ValueType>* smem_ptr, uint32_t transaction_bytes) {
-        ValueType old_value = smem_ptr->fetch_add(transaction_bytes, std::memory_order_relaxed);
-        ValueType new_value = old_value + transaction_bytes;
+    static void arrive_and_expect_tx(ValueType* smem_ptr, uint32_t transaction_bytes) {
+        *smem_ptr += transaction_bytes;
         std::cout << "[Static] ClusterTransactionBarrier::arrive_and_expect_tx: added " 
-                  << transaction_bytes << " bytes, new *smem_ptr = " << new_value << std::endl;
+                  << transaction_bytes << " bytes, new *smem_ptr = " << *smem_ptr << std::endl;
     }
 
-    static void arrive_and_expect_tx(std::atomic<ValueType>* smem_ptr, uint32_t transaction_bytes, uint32_t cta_id, uint32_t pred) {
+    static void arrive_and_expect_tx(ValueType* smem_ptr, uint32_t transaction_bytes, uint32_t cta_id, uint32_t pred) {
         if (pred) {
-            ValueType old_value = smem_ptr->fetch_add(transaction_bytes, std::memory_order_relaxed);
-            ValueType new_value = old_value + transaction_bytes;
+            *smem_ptr += transaction_bytes;
             std::cout << "[Static] ClusterTransactionBarrier::arrive_and_expect_tx for cta_id " 
-                      << cta_id << ": added " << transaction_bytes << " bytes, new *smem_ptr = " << new_value << std::endl;
+                      << cta_id << ": added " << transaction_bytes << " bytes, new *smem_ptr = " << *smem_ptr << std::endl;
         } else {
-            ValueType current_smem = smem_ptr->load(std::memory_order_relaxed);
             std::cout << "[Static] ClusterTransactionBarrier::arrive_and_expect_tx for cta_id " 
-                      << cta_id << " skipped due to pred false, current *smem_ptr = " << current_smem << std::endl;
+                      << cta_id << " skipped due to pred false" << std::endl;
         }
     }
 
-    static void expect_transaction(std::atomic<ValueType>* smem_ptr, uint32_t transaction_bytes) {
-        ValueType old_value = smem_ptr->fetch_add(transaction_bytes, std::memory_order_relaxed);
-        ValueType new_value = old_value + transaction_bytes;
+    static void expect_transaction(ValueType* smem_ptr, uint32_t transaction_bytes) {
+        *smem_ptr += transaction_bytes;
         std::cout << "[Static] ClusterTransactionBarrier::expect_transaction: added " 
-                  << transaction_bytes << " bytes, new *smem_ptr = " << new_value << std::endl;
+                  << transaction_bytes << " bytes, new *smem_ptr = " << *smem_ptr << std::endl;
     }
 
-    static void complete_transaction(std::atomic<ValueType>* smem_ptr, uint32_t dst_cta_id, uint32_t transaction_bytes, uint32_t pred = 1) {
+    static void complete_transaction(ValueType* smem_ptr, uint32_t dst_cta_id, uint32_t transaction_bytes, uint32_t pred = 1) {
         if (pred) {
-            ValueType old_value = smem_ptr->fetch_sub(transaction_bytes, std::memory_order_relaxed);
-            ValueType new_value = old_value - transaction_bytes;
+            *smem_ptr -= transaction_bytes;
             std::cout << "[Static] ClusterTransactionBarrier::complete_transaction for dst_cta_id " 
                       << dst_cta_id << ": subtracted " << transaction_bytes 
-                      << " bytes, new *smem_ptr = " << new_value << std::endl;
+                      << " bytes, new *smem_ptr = " << *smem_ptr << std::endl;
         } else {
-            ValueType current_smem = smem_ptr->load(std::memory_order_relaxed);
             std::cout << "[Static] ClusterTransactionBarrier::complete_transaction for dst_cta_id " 
-                      << dst_cta_id << " skipped due to pred false, current *smem_ptr = " << current_smem << std::endl;
+                      << dst_cta_id << " skipped due to pred false" << std::endl;
         }
     }
-
+    
     //=================== DEPRECATED APIs ===========================
     [[deprecated("Use arrive_and_expect_tx instead")]]
     void arrive_and_reset_bytes(uint32_t transaction_bytes) const {
@@ -1205,31 +925,27 @@ struct ClusterTransactionBarrier : public ClusterBarrier {
         complete_transaction(dst_cta_id, transaction_bytes, pred);
     }
     [[deprecated("Use arrive_and_expect_tx instead")]]
-    static void arrive_and_reset_bytes(std::atomic<ValueType>* smem_ptr, uint32_t transaction_bytes) {
+    static void arrive_and_reset_bytes(ValueType* smem_ptr, uint32_t transaction_bytes) {
         arrive_and_expect_tx(smem_ptr, transaction_bytes);
     }
     [[deprecated("Use arrive_and_expect_tx instead")]]
-    static void arrive_and_reset_bytes(std::atomic<ValueType>* smem_ptr, uint32_t transaction_bytes, uint32_t cta_id, uint32_t pred) {
+    static void arrive_and_reset_bytes(ValueType* smem_ptr, uint32_t transaction_bytes, uint32_t cta_id, uint32_t pred) {
         arrive_and_expect_tx(smem_ptr, transaction_bytes, cta_id, pred);
     }
     [[deprecated("Use expect_transaction instead")]]
-    static void reset_bytes(std::atomic<ValueType>* smem_ptr, uint32_t transaction_bytes) {
+    static void reset_bytes(ValueType* smem_ptr, uint32_t transaction_bytes) {
         expect_transaction(smem_ptr, transaction_bytes);
     }
     [[deprecated("Use complete_transaction instead")]]
-    static void commit(std::atomic<ValueType>* smem_ptr, uint32_t dst_cta_id, uint32_t transaction_bytes, uint32_t pred = 1) {
+    static void commit(ValueType* smem_ptr, uint32_t dst_cta_id, uint32_t transaction_bytes, uint32_t pred = 1) {
         complete_transaction(smem_ptr, dst_cta_id, transaction_bytes, pred);
     }
 };
 
-// 辅助函数，用于模拟 barrier 初始化的fence（仅打印日志，不阻塞）
-void fence_barrier_init() {
-    std::cout << "[Host] fence_barrier_init called." << std::endl;
-}
-
-
-
-
+// // 辅助函数，用于模拟 barrier 初始化的fence（仅打印日志，不阻塞）
+// void fence_barrier_init() {
+//     std::cout << "[Host] fence_barrier_init called." << std::endl;
+// }
 
 
 
@@ -1485,23 +1201,23 @@ void fence_barrier_init() {
 
 
 
-// // Helps with visibility of barrier init operations across warps / cta / cluster
-// // Available as a separate function so as to batch inits across barriers and fence once
-// // Note : It must be composed with an appropriate sync instruction with the right scope
-// // to ensure visibility eg. __syncthreads() or a cluster_arrive() + cluster_wait()
-// CUTLASS_DEVICE
-// void fence_barrier_init() {
-// #if CUDA_BARRIER_ENABLED
-//   cutlass::arch::synclog_emit_fence_barrier_init(__LINE__);
-//   asm volatile(
-//       "{\n\t"
-//       "fence.mbarrier_init.release.cluster; \n"
-//       "}"
-//       ::);
-// #elif defined(__CUDA_ARCH__)
-//   asm volatile ("brkpt;\n" ::);
-// #endif
-// }
+// Helps with visibility of barrier init operations across warps / cta / cluster
+// Available as a separate function so as to batch inits across barriers and fence once
+// Note : It must be composed with an appropriate sync instruction with the right scope
+// to ensure visibility eg. __syncthreads() or a cluster_arrive() + cluster_wait()
+CUTLASS_DEVICE
+void fence_barrier_init() {
+#if CUDA_BARRIER_ENABLED
+  cutlass::arch::synclog_emit_fence_barrier_init(__LINE__);
+  asm volatile(
+      "{\n\t"
+      "fence.mbarrier_init.release.cluster; \n"
+      "}"
+      ::);
+#elif defined(__CUDA_ARCH__)
+  asm volatile ("brkpt;\n" ::);
+#endif
+}
 
 
 

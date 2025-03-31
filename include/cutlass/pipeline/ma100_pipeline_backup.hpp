@@ -523,7 +523,7 @@ private:
   CUTLASS_DEVICE
   void producer_commit(uint32_t stage, uint32_t bytes) {
     // Below code is used only for unit-testing (in the absence of TMA commit)
-    #if CUTLASS_UNIT_TEST_PIPELINE
+    // #if CUTLASS_UNIT_TEST_PIPELINE
       if (params_.is_leader) {
         // STEP 1 : Commit to self
         full_barrier_ptr_[stage].complete_transaction(bytes);
@@ -545,7 +545,7 @@ private:
           full_barrier_ptr_[stage].complete_transaction(dst_block_id, bytes, m!=local_block_id.x);
         }
       }
-    #endif
+    // #endif
   }
 
   CUTLASS_DEVICE

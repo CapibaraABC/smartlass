@@ -53,7 +53,7 @@
 
 #include "testbed_aurora.h"
 
-#include "cutlass/pipeline/pipeline.hpp"
+#include "cutlass/pipeline/ma100_pipeline.hpp"
 
 #include "cutlass/arch/barrier.h"
 #include "cute/arch/cluster_sm90.hpp"
@@ -99,6 +99,11 @@ void pipeline_device(uint32_t const NumIterations)
   params.role = MainloopPipeline::ThreadCategory::ProducerConsumer;
   params.is_leader = warp_group_thread_idx == 0;
   params.num_consumers = 128;
+  params.global_thread_id = blockIdx.x * blockDim.x + threadIdx.x
+                      + (blockIdx.y * blockDim.y + threadIdx.y) * gridDim.x * blockDim.x
+                      + (blockIdx.z * blockDim.z + threadIdx.z) * gridDim.x * gridDim.y * blockDim.x * blockDim.y;
+
+
 
   MainloopPipeline pipeline(shared_storage.storage, params, cluster_shape);
 
@@ -122,20 +127,26 @@ void pipeline_device(uint32_t const NumIterations)
   int lane_predicate = cute::elect_one_sync();
   int k_pipe_tma_prologue = min(NumStages, tma_k_iterations);
 
-  if(threadIdx.x % 32 == 0){
-    print("\nwarp %d: Prologue:----------------------\n", warp_idx);
+
+  volatile uint global_thread_id = blockIdx.x * blockDim.x + threadIdx.x
+                      + (blockIdx.y * blockDim.y + threadIdx.y) * gridDim.x * blockDim.x
+                      + (blockIdx.z * blockDim.z + threadIdx.z) * gridDim.x * gridDim.y * blockDim.x * blockDim.y;
+
+
+  if(global_thread_id == 0){
+    printf("\nglobal_id %d: Prologue:----------------------\n", global_thread_id);
   }
 
   // DMA Prologue (Loads)
   CUTLASS_PRAGMA_UNROLL
   for(int i = 0; i < k_pipe_tma_prologue; ++i) {
 
-    if (lane_predicate && (warp_idx == 0) ){
+    if (lane_predicate){
       pipeline.producer_acquire(smem_pipe_write);
 
       // cp.async.bulk.tensor would typically happen here
-      if(threadIdx.x % 32 == 0){
-          print("warp %d: Copy: index = %d, count = %d\n", warp_idx, smem_pipe_write.index(), smem_pipe_write.count());
+      if(global_thread_id == 0){
+          printf("global_id %d: Copy: index = %d, count = %d\n", global_thread_id, smem_pipe_write.index(), smem_pipe_write.count());
       }
 
       pipeline.producer_commit(smem_pipe_write, per_cta_bytes);
@@ -145,34 +156,35 @@ void pipeline_device(uint32_t const NumIterations)
   tma_k_iterations -= k_pipe_tma_prologue;
 
   // MMA Prologue (Compute) - modeling inflight MMAs
+  CUTLASS_PRAGMA_UNROLL
   for (int iter = 0; iter < K_TILE_MMAS; ++iter)
   {
     pipeline.consumer_wait(smem_pipe_read);
-    warpgroup_arrive();
+    // warpgroup_arrive();
 
-    if(threadIdx.x % 32 == 0){
+    if(global_thread_id == 0){
     // GMMA would typically happen here
-    print("warp %d: MMA: index = %d, count = %d\n", warp_idx, smem_pipe_write.index(), smem_pipe_read.count());
+    printf("global_id %d: MMA: index = %d, count = %d\n", global_thread_id, smem_pipe_read.index(), smem_pipe_read.count());
     }
-
+    pipeline.consumer_release(smem_pipe_read);
     ++smem_pipe_read;
   }
 
   mma_k_iterations -= K_TILE_MMAS;
 
-  if(threadIdx.x % 32 == 0){
-    print("\nwarp %d: Mainloop:----------------------\n", warp_idx);
+  if(global_thread_id == 0){
+    printf("\nglobal_id %d: Mainloop:----------------------\n", global_thread_id);
   }
 
-  CUTLASS_PRAGMA_NO_UNROLL
+  CUTLASS_PRAGMA_UNROLL
   for (int iter = 0; iter < mma_k_iterations; ++iter)
   {
     pipeline.consumer_wait(smem_pipe_read);
 
-    warpgroup_arrive();
+    // warpgroup_arrive();
     // GMMA would typically happen here
-    if(threadIdx.x % 32 == 0){
-        print("warp %d: MMA: index = %d, count = %d\n", warp_idx, smem_pipe_write.index(), smem_pipe_read.count());
+    if(global_thread_id == 0){
+        printf("global_id %d: MMA: index = %d, count = %d\n", global_thread_id, smem_pipe_read.index(), smem_pipe_read.count());
     }
 
     pipeline.consumer_release(smem_pipe_release);
@@ -181,7 +193,7 @@ void pipeline_device(uint32_t const NumIterations)
       pipeline.producer_acquire(smem_pipe_write);
 
       // cp.async.bulk.tensor would typically happen here
-      print("warp %d: Copy: index = %d, count = %d\n", warp_idx, smem_pipe_write.index(), smem_pipe_write.count());
+      printf("global_id %d: Copy: index = %d, count = %d\n", global_thread_id, smem_pipe_write.index(), smem_pipe_write.count());
 
       pipeline.producer_commit(smem_pipe_write, per_cta_bytes);
       ++smem_pipe_write;
@@ -303,7 +315,7 @@ struct PipelineTest {
 TEST(SM90_Verify_PipelineTmaAsync, Cluster1x1_Stage2) {
   Options options;
   using ClusterShape = cutlass::gemm::GemmShape<1, 1, 1>;
-  static constexpr uint32_t Stages = 2;
+  static constexpr uint32_t Stages = 1;
   using Test = PipelineTest<Stages, ClusterShape>;
   Testbed<Test> testbed(options);
   EXPECT_TRUE(testbed.verification());

@@ -55,13 +55,13 @@ namespace detail {
 
 // Helper function for DEBUG checks
 template<class ThreadCategory>
-CUTLASS_DEVICE
+CUTLASS_HOST_DEVICE
 bool pipeline_is_producer(ThreadCategory role) {
   return (role == ThreadCategory::Producer || role == ThreadCategory::ProducerConsumer);
 }
 
 template<class ThreadCategory>
-CUTLASS_DEVICE
+CUTLASS_HOST_DEVICE
 void pipeline_check_is_producer(ThreadCategory role) {
   #ifndef NDEBUG
   if (!pipeline_is_producer(role)) {
@@ -71,13 +71,13 @@ void pipeline_check_is_producer(ThreadCategory role) {
 }
 
 template<class ThreadCategory>
-CUTLASS_DEVICE
+CUTLASS_HOST_DEVICE
 bool pipeline_is_consumer(ThreadCategory role) {
   return (role == ThreadCategory::Consumer || role == ThreadCategory::ProducerConsumer);
 }
 
 template<class ThreadCategory>
-CUTLASS_DEVICE
+CUTLASS_HOST_DEVICE
 void pipeline_check_is_consumer(ThreadCategory role) {
   #ifndef NDEBUG
   if (!pipeline_is_consumer(role)) {
@@ -86,7 +86,7 @@ void pipeline_check_is_consumer(ThreadCategory role) {
   #endif
 }
 
-CUTLASS_DEVICE
+CUTLASS_HOST_DEVICE
 cute::tuple<bool, uint32_t> spread_arrivals_to_warp(int thread_idx_in_warp) {
   constexpr uint32_t MaxClusterSize = 16;
   bool is_signaling_thread = (thread_idx_in_warp % (32 / MaxClusterSize)) == 0;
@@ -97,7 +97,7 @@ cute::tuple<bool, uint32_t> spread_arrivals_to_warp(int thread_idx_in_warp) {
   return cute::make_tuple(is_signaling_thread, dst_blockid);
 }
 
-CUTLASS_DEVICE
+CUTLASS_HOST_DEVICE
 cute::tuple<bool, uint32_t> spread_arrivals_to_warpgroup(int thread_idx_in_warpgroup, int warp_idx) {
   constexpr uint32_t MaxClusterSize = 16;
   bool is_signaling_thread = (thread_idx_in_warpgroup % (NumThreadsPerWarpGroup / MaxClusterSize)) == 0;
@@ -176,31 +176,31 @@ struct PipelineState {
   uint32_t phase_ = 0;
   uint32_t count_ = 0;
 
-  CUTLASS_DEVICE
+  CUTLASS_HOST_DEVICE
   PipelineState(): index_{}, phase_{}, count_{} {}
 
-  CUTLASS_DEVICE
+  CUTLASS_HOST_DEVICE
   PipelineState(int index, uint32_t phase, uint32_t count)
     : index_(index)
     , phase_(phase)
     , count_(count) {}
 
-  CUTLASS_DEVICE
+  CUTLASS_HOST_DEVICE
   int index() const {
     return index_;
   }
 
-  CUTLASS_DEVICE
+  CUTLASS_HOST_DEVICE
   uint32_t phase() const {
     return phase_;
   }
 
-  CUTLASS_DEVICE
+  CUTLASS_HOST_DEVICE
   uint32_t count() const {
     return count_;
   }
 
-  CUTLASS_DEVICE
+  CUTLASS_HOST_DEVICE
   void operator++() {
     if constexpr (Stages > 0) {
       ++index_;
@@ -212,12 +212,12 @@ struct PipelineState {
     }
   }
 
-  CUTLASS_DEVICE
+  CUTLASS_HOST_DEVICE
   PipelineState& operator+=(uint32_t num_iterations) {
     return advance(num_iterations);
   }
 
-  CUTLASS_DEVICE
+  CUTLASS_HOST_DEVICE
   PipelineState& operator=(PipelineState const& other) {
     index_ = other.index();
     phase_ = other.phase();
@@ -225,7 +225,7 @@ struct PipelineState {
     return *this;
   }
 
-  CUTLASS_DEVICE
+  CUTLASS_HOST_DEVICE
   PipelineState& advance(uint32_t num_iterations) {
     if constexpr (Stages > 0) {
       // Number of iterations cross over the stage boundary => flipped phase
@@ -243,14 +243,14 @@ struct PipelineState {
     return *this;
   }
 
-  CUTLASS_DEVICE
+  CUTLASS_HOST_DEVICE
   static PipelineState make_pipeline_state(PipelineState start_state, uint32_t num_iterations) {
     return start_state.advance(num_iterations);
   }
 };
 
 template<class Pipeline>
-CUTLASS_DEVICE
+CUTLASS_HOST_DEVICE
 PipelineState<Pipeline::Stages> make_producer_start_state() {
   // Producer starts with an opposite phase as the buffers are initially empty
   constexpr int InitialProducerStage = 0;
@@ -296,6 +296,7 @@ public:
     uint32_t num_consumers = 0; // Number of consumer threads
     uint32_t num_producers = 1; // Number of producer threads
     int initializing_warp = 0; 
+    volatile uint global_thread_id = 1;
   };
 
   template <class ClusterShape>
@@ -319,17 +320,19 @@ public:
       cutlass::arch::detail::initialize_barrier_array_pair_aligned<decltype(storage.full_barrier_), decltype(storage.empty_barrier_), Stages>(
           storage.full_barrier_, storage.empty_barrier_, producer_arv_cnt, multicast_consumer_arrival_count);
     }
-    cutlass::arch::fence_barrier_init();
+    //cutlass::arch::fence_barrier_init();
   }
 
   template<class ClusterShape, class InitBarriers, class InitMasks>
-  CUTLASS_DEVICE
+  CUTLASS_HOST_DEVICE
   PipelineDmaAuroraAsync(SharedStorage& storage, Params params, ClusterShape cluster_shape, InitBarriers = {}, InitMasks = {})
       : params_(params)
       , full_barrier_ptr_(&storage.full_barrier_[0])
       , empty_barrier_ptr_(&storage.empty_barrier_[0]) {
 
-    int warp_idx = canonical_warp_idx_sync();
+
+    // int warp_idx = canonical_warp_idx_sync();
+    int warp_idx = threadIdx.x / 32;
     int thread_idx = threadIdx.x;
     int lane_predicate = cute::elect_one_sync();
 
@@ -377,17 +380,17 @@ public:
 
   // Constructor
   template<class ClusterShape>
-  CUTLASS_DEVICE
+  CUTLASS_HOST_DEVICE
   PipelineDmaAuroraAsync(SharedStorage& storage, Params params, ClusterShape cluster_shape)
       : PipelineDmaAuroraAsync(storage, params, cluster_shape, cute::true_type{}, cute::true_type{}) { }
   
   template<class ClusterShape, class InitBarriers>
-  CUTLASS_DEVICE
+  CUTLASS_HOST_DEVICE
   PipelineDmaAuroraAsync(SharedStorage& storage, Params params, ClusterShape cluster_shape, InitBarriers = {})
       : PipelineDmaAuroraAsync(storage, params, cluster_shape, InitBarriers{}, cute::true_type{}) { }
 
   template <class ClusterShape>
-  CUTLASS_DEVICE
+  CUTLASS_HOST_DEVICE
   bool is_same_row_or_col(int dst_block_id, dim3 block_id, ClusterShape cluster_shape) {
     return (((dst_block_id % cute::size<0>(cluster_shape)) == block_id.x) ||
             (
@@ -415,30 +418,30 @@ public:
   // then it is still correct to pass it into the finalize function.
   // The finalize function will return immediately in that case.
 
-  CUTLASS_DEVICE
+  CUTLASS_HOST_DEVICE
   ProducerToken producer_try_acquire(PipelineState state, uint32_t skip_wait = false) {
     return producer_try_acquire(state.index(), state.phase(), skip_wait);
   }
 
-  CUTLASS_DEVICE
+  CUTLASS_HOST_DEVICE
   void producer_acquire(PipelineState state, ProducerToken barrier_token = {BarrierStatus::WaitAgain}) {
     producer_acquire(state.index(), state.phase(), barrier_token);
   }
 
-  CUTLASS_DEVICE
+  CUTLASS_HOST_DEVICE
   void producer_commit(PipelineState state, uint32_t bytes) {
     producer_commit(state.index(), bytes);
   }
 
   template<class UserDefinedArriveOp>
-  CUTLASS_DEVICE
+  CUTLASS_HOST_DEVICE
   void producer_commit(PipelineState state, UserDefinedArriveOp&& user_defined_arrive_op) {
     cute::forward<UserDefinedArriveOp>(user_defined_arrive_op)(producer_get_barrier(state.index()));;
   }
 
   // Prevents early exit of producer blocks in Cluster.
   // This should be called once before kernel exits.
-  CUTLASS_DEVICE
+  CUTLASS_HOST_DEVICE
   void producer_tail(PipelineState state) {
     detail::pipeline_check_is_producer(params_.role);
     for (int count = 0; count < Stages; ++count) {
@@ -447,7 +450,7 @@ public:
     }
   }
 
-  CUTLASS_DEVICE
+  CUTLASS_HOST_DEVICE
   ProducerBarrierType* producer_get_barrier(PipelineState state) {
     return producer_get_barrier(state.index());
   }
@@ -455,27 +458,27 @@ public:
   ////////////////////
   // Consumer APIs
   ////////////////////
-  CUTLASS_DEVICE
+  CUTLASS_HOST_DEVICE
   ConsumerToken consumer_try_wait(PipelineState state, uint32_t skip_wait = false) {
     return consumer_try_wait(state.index(), state.phase(), skip_wait);
   }
 
-  CUTLASS_DEVICE
+  CUTLASS_HOST_DEVICE
   ConsumerToken consumer_test_wait(PipelineState state, uint32_t skip_wait = false) {
     return consumer_test_wait(state.index(), state.phase(), skip_wait);
   }
 
-  CUTLASS_DEVICE
+  CUTLASS_HOST_DEVICE
   void consumer_wait(PipelineState state) {
     consumer_wait(state.index(), state.phase());
   }
 
-  CUTLASS_DEVICE
+  CUTLASS_HOST_DEVICE
   void consumer_wait(PipelineState state, ConsumerToken barrier_token) {
     consumer_wait(state.index(), state.phase(), barrier_token);
   }
 
-  CUTLASS_DEVICE
+  CUTLASS_HOST_DEVICE
   void consumer_release(PipelineState state) {
     consumer_release(state.index());
   }
@@ -487,7 +490,13 @@ private:
   EmptyBarrier *empty_barrier_ptr_ = nullptr;
   Params params_;
 
-  CUTLASS_DEVICE
+
+
+  // uint x = threadIdx.x + blockIdx.x * blockDim.x + gridDim.x * blockDim.x * y;
+  volatile uint global_thread_id = params_.global_thread_id;
+
+
+  CUTLASS_HOST_DEVICE
   ProducerToken producer_try_acquire(uint32_t stage, uint32_t phase, uint32_t skip_wait) {
     detail::pipeline_check_is_producer(params_.role);
     if (skip_wait) {
@@ -497,18 +506,18 @@ private:
     return {static_cast<BarrierStatus>(barrier_status)};
   }
 
-  CUTLASS_DEVICE
+  CUTLASS_HOST_DEVICE
   void producer_acquire(uint32_t stage, uint32_t phase, ProducerToken barrier_token) {
-    dim3 block_id = cute::block_id_in_cluster();
-    if(threadIdx.x % 32 == 0){
-      print("warp %d: producer_acquire waiting, stage = %d, phase = %d\n", threadIdx.x/32, stage, phase);
+    // dim3 block_id = cute::block_id_in_cluster();
+    if( global_thread_id == 0 ){
+      printf("global_thread_id %d: producer_acquire waiting, stage = %d, phase = %d\n", global_thread_id, stage, phase);
     }
     detail::pipeline_check_is_producer(params_.role);
     if (barrier_token != BarrierStatus::WaitDone) {
       
       empty_barrier_ptr_[stage].wait(phase);
-      if(threadIdx.x % 32 == 0){
-        print("warp %d: producer_acquire done, stage = %d, phase = %d\n", threadIdx.x/32, stage, phase);
+      if( global_thread_id == 0 ){
+        printf("global_thread_id %d: producer_acquire done, stage = %d, phase = %d\n", global_thread_id, stage, phase);
       }
     }
 
@@ -528,42 +537,42 @@ private:
   }
 
   // NOP for TMA based mainloop
-  CUTLASS_DEVICE
+  CUTLASS_HOST_DEVICE
   void producer_commit(uint32_t stage, uint32_t bytes) {
     // Below code is used only for unit-testing (in the absence of TMA commit)
-    #if CUTLASS_UNIT_TEST_PIPELINE
+    // #if CUTLASS_UNIT_TEST_PIPELINE
       if (params_.is_leader) {
 
-        dim3 block_id = cute::block_id_in_cluster();
-        if(threadIdx.x % 32 == 0){
-          print("warp %d: producer_commit done, stage = %d, transaction = %d\n", threadIdx.x/32, stage, bytes);
+        // dim3 block_id = cute::block_id_in_cluster();
+        if( global_thread_id == 0 ){
+          printf("global_thread_id %d: producer_commit done, stage = %d, transaction = %d\n", global_thread_id, stage, bytes);
         }
 
         // STEP 1 : Commit to self
         full_barrier_ptr_[stage].complete_transaction(bytes);
 
-        // STEP 2 : Commit to other blocks in our cluster
-        auto cluster_shape = cute::cluster_shape();
-        Layout block_layout_in_cluster = make_layout(cluster_shape);
-        dim3 local_block_id = cute::block_id_in_cluster();
+        // // STEP 2 : Commit to other blocks in our cluster
+        // auto cluster_shape = cute::cluster_shape();
+        // Layout block_layout_in_cluster = make_layout(cluster_shape);
+        // dim3 local_block_id = cute::block_id_in_cluster();
 
-        CUTLASS_PRAGMA_UNROLL
-        for(int n = 0; n < size<1>(block_layout_in_cluster); ++n) {
-          uint32_t dst_block_id = block_layout_in_cluster(local_block_id.x,n,Int<0>{});
-          full_barrier_ptr_[stage].complete_transaction(dst_block_id, bytes, n!=local_block_id.y);
-        }
+        // CUTLASS_PRAGMA_UNROLL
+        // for(int n = 0; n < size<1>(block_layout_in_cluster); ++n) {
+        //   uint32_t dst_block_id = block_layout_in_cluster(local_block_id.x,n,Int<0>{});
+        //   full_barrier_ptr_[stage].complete_transaction(dst_block_id, bytes, n!=local_block_id.y);
+        // }
 
-        CUTLASS_PRAGMA_UNROLL
-        for(int m = 0; m < size<0>(block_layout_in_cluster); ++m) {
-          uint32_t dst_block_id = block_layout_in_cluster(m,local_block_id.y,Int<0>{});
-          full_barrier_ptr_[stage].complete_transaction(dst_block_id, bytes, m!=local_block_id.x);
-        }
+        // CUTLASS_PRAGMA_UNROLL
+        // for(int m = 0; m < size<0>(block_layout_in_cluster); ++m) {
+        //   uint32_t dst_block_id = block_layout_in_cluster(m,local_block_id.y,Int<0>{});
+        //   full_barrier_ptr_[stage].complete_transaction(dst_block_id, bytes, m!=local_block_id.x);
+        // }
         
       }
-    #endif
+    // #endif
   }
 
-  CUTLASS_DEVICE
+  CUTLASS_HOST_DEVICE
   ConsumerToken consumer_try_wait(uint32_t stage, uint32_t phase, uint32_t skip_wait) {
     detail::pipeline_check_is_consumer(params_.role);
     if (skip_wait) {
@@ -573,7 +582,7 @@ private:
     return {static_cast<BarrierStatus>(barrier_status)};
   }
 
-  CUTLASS_DEVICE
+  CUTLASS_HOST_DEVICE
   ConsumerToken consumer_test_wait(uint32_t stage, uint32_t phase, uint32_t skip_wait) {
     detail::pipeline_check_is_consumer(params_.role);
     if (skip_wait) {
@@ -584,43 +593,43 @@ private:
   }
 
   // Wait for producer to commit transactions (done by TMA)
-  CUTLASS_DEVICE
+  CUTLASS_HOST_DEVICE
   void consumer_wait(uint32_t stage, uint32_t phase) {
     detail::pipeline_check_is_consumer(params_.role);
-    dim3 block_id = cute::block_id_in_cluster();
-    if(threadIdx.x % 32 == 0){
-      print("warp %d: consumer_wait waiting, stage = %d, phase = %d\n", threadIdx.x/32, stage, phase);
+    // dim3 block_id = cute::block_id_in_cluster();
+    if( false ){
+      printf("global_thread_id %d: consumer_wait waiting, stage = %d, phase = %d\n", global_thread_id, stage, phase);
     }
     full_barrier_ptr_[stage].wait(phase);
-    if(threadIdx.x % 32 == 0){
-      print("warp %d: consumer_wait done, stage = %d, phase = %d\n", threadIdx.x/32, stage, phase);
+    if( global_thread_id == 0 ){
+      printf("global_thread_id %d: consumer_wait done, stage = %d, phase = %d\n", global_thread_id, stage, phase);
     }
   }
 
   // Wait for producer to commit transactions (done by TMA)
-  CUTLASS_DEVICE
+  CUTLASS_HOST_DEVICE
   void consumer_wait(uint32_t stage, uint32_t phase, ConsumerToken barrier_token) {
     detail::pipeline_check_is_consumer(params_.role);
     if (barrier_token == BarrierStatus::WaitAgain) {
-      dim3 block_id = cute::block_id_in_cluster();
-      if(threadIdx.x % 32 == 0){
-        print("warp %d: consumer_wait waiting, stage = %d, phase = %d\n", threadIdx.x/32, stage, phase);
+      // dim3 block_id = cute::block_id_in_cluster();
+      if( global_thread_id == 0 ){
+        printf("global_thread_id %d: consumer_wait waiting, stage = %d, phase = %d\n", global_thread_id, stage, phase);
       }
       full_barrier_ptr_[stage].wait(phase);
-      if(threadIdx.x % 32 == 0){
-        print("warp %d: consumer_wait done, stage = %d, phase = %d\n", threadIdx.x/32, stage, phase);
+      if( global_thread_id == 0 ){
+        printf("global_thread_id %d: consumer_wait done, stage = %d, phase = %d\n", global_thread_id, stage, phase);
       }
     }
   }
 
   // Consumer signalling Producer of completion
   // Ensures all blocks in the Same Row and Column get notifed.
-  CUTLASS_DEVICE
+  CUTLASS_HOST_DEVICE
   void consumer_release(uint32_t stage, uint32_t skip = false) {
     detail::pipeline_check_is_consumer(params_.role);
-    dim3 block_id = cute::block_id_in_cluster();
-    if(threadIdx.x % 32 == 0){
-      print("warp %d: consumer_release done, stage = %d\n", threadIdx.x/32, stage);
+    // dim3 block_id = cute::block_id_in_cluster();
+    if( global_thread_id == 0 ){
+      printf("global_thread_id %d: consumer_release done, stage = %d\n", global_thread_id, stage);
     }
     empty_barrier_ptr_[stage].arrive(dst_blockid_, is_signaling_thread_ & (!skip));
     #ifndef NDEBUG
@@ -630,7 +639,7 @@ private:
     #endif
   }
 
-  CUTLASS_DEVICE
+  CUTLASS_HOST_DEVICE
   ProducerBarrierType* producer_get_barrier(uint32_t stage) {
     return reinterpret_cast<ProducerBarrierType*>(&full_barrier_ptr_[stage]);
   }

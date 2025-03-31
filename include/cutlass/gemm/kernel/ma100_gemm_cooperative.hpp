@@ -510,6 +510,9 @@ public:
 
     // Wait for all threads in the thread block
     __syncthreads();
+    // cute::cluster_arrive_relaxed();
+    // cute::cluster_wait();
+
 
     #if 0
     Tensor accumulators = partition_fragment_C(tiled_mma, take<0,2>(blk_shape));                 // (MMA,MMA_M,MMA_N)
@@ -591,6 +594,8 @@ public:
       auto k_residue   = K - size<1>(gA) * size<2>(gA);                                   // K - BLK_K * k_coord_max
       auto residue_mnk = make_tuple(m_max_coord, n_max_coord, k_residue);
 
+
+
       collective_mainloop.load(
         params.mainloop,
         mainloop_pipeline,
@@ -643,10 +648,15 @@ public:
       // );
     }
     #endif
+
+    // // To make sure remote SMEM doesn't get destoryed
+    // cute::cluster_arrive();
+    // cute::cluster_wait();
+    
   }
   //*/
 };
 
 ///////////////////////////////////////////////////////////////////////////////
-
+    // cudaError_t result = cudaDeviceSynchronize();
 } // namespace cutlass::gemm::kernel

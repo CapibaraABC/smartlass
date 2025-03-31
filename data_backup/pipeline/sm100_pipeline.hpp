@@ -36,8 +36,8 @@
 #include "cute/numeric/integral_constant.hpp"
 #include "cute/arch/cluster_sm90.hpp"
 #include "cutlass/arch/barrier.h"
-#include "cutlass/pipeline/ma100_pipeline.hpp"
-#include "ma100_pipeline.hpp"
+#include "cutlass/pipeline/sm90_pipeline.hpp"
+#include "sm90_pipeline.hpp"
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -289,7 +289,7 @@ public:
   static constexpr uint32_t Stages = Stages_;
   using AtomThrShape_MNK = AtomThrShape_MNK_;
 private:
-  using Impl = PipelineDmaAuroraAsync<Stages>;
+  using Impl = PipelineTmaAsync<Stages>;
 public:
   using FullBarrier  = typename Impl::FullBarrier;
   using EmptyBarrier = typename Impl::EmptyBarrier;
@@ -479,7 +479,7 @@ public:
   static constexpr uint32_t Stages = Stages_;
   using AtomThrShape_MNK = AtomThrShape_MNK_;
 private:
-  using Impl = PipelineDmaAuroraAsync<Stages>;
+  using Impl = PipelineTmaAsync<Stages>;
 public:
   using FullBarrier  = typename Impl::FullBarrier;
   using EmptyBarrier = typename Impl::EmptyBarrier;

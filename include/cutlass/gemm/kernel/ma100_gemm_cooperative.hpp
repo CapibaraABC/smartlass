@@ -409,7 +409,9 @@ public:
   operator()(Params const& params, char* smem_buf) {
     using namespace cute;
     using X = Underscore;
-
+    if(thread0() && blockIdx.x == 0 && blockIdx.y == 0){
+      printf("in operator() (smartlass/include/cutlass/gemm/kernel/ma100_gemm_cooperative.hpp:413)\n");
+    }
     // Kernel level shared memory storage
     SharedStorage& shared_storage = *reinterpret_cast<SharedStorage*>(smem_buf);
 
@@ -634,19 +636,19 @@ public:
       );
 
       // Epilogue and write to gD
-      // collective_epilogue.store(
-      //   epi_load_pipeline,
-      //   epi_load_pipe_consumer_state,
-      //   epi_store_pipeline,
-      //   epi_store_pipe_producer_state,
-      //   problem_shape_MNKL,
-      //   blk_shape,
-      //   blk_coord,
-      //   accumulators,
-      //   tiled_mma,
-      //   warp_group_thread_idx,
-      //   shared_storage.tensors.epilogue
-      // );
+      collective_epilogue.store(
+        epi_load_pipeline,
+        epi_load_pipe_consumer_state,
+        epi_store_pipeline,
+        epi_store_pipe_producer_state,
+        problem_shape_MNKL,
+        blk_shape,
+        blk_coord,
+        accumulators,
+        tiled_mma,
+        warp_group_thread_idx,
+        shared_storage.tensors.epilogue
+      );
     }
     #endif
   }

@@ -155,7 +155,7 @@ struct MMA_Aurora_64x64x16_F16F16F16_SS
               uint x = threadIdx.x + blockIdx.x * blockDim.x + gridDim.x * blockDim.x * y;
               if (x == 0)
               {
-                printf("in gemm_cal\n\n");
+                printf("in gemm_cal (smartlass/include/cute/arch/mma_aurora_gmma.hpp:158) \n\n");
                 // printf("alpha:%u, m:%u, n:%u, k:%u\n", alpha, m, n, k);
                 // printf("MatrixA:%p, MatrixB:%p, MatrixC:%p\n", MatrixA, MatrixB, MatrixC);
               }

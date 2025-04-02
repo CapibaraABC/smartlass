@@ -296,14 +296,14 @@ gemm(MMA_Atom<MMA>       const& mma,
       for (int n = 0; n < N; ++n) {
         int ns = (m & 1) ? N-1-n : n;  // Serpentine coordinate
         gemm(mma, D(_,m,ns), A(_,m), B(_,ns), C(_,m,ns));
-        if(thread0()){
+        if(thread0()&&blockIdx.x == 0 && blockIdx.y == 0){
           using ShapeMNK = typename MMA_Atom<MMA>::Shape_MNK; 
           ShapeMNK shape; 
           uint32_t msize = size<0>(shape);
           uint32_t nsize = size<1>(shape);
           uint32_t ksize = size<2>(shape);
-          printf("MMA_Atom.Shape_MNK:%u, %u, %u", msize, nsize, ksize);
-          printf(" calulate block C.coord:(%d,%d)\n", (int)(m), (int)(ns));
+          printf("MMA_Atom.Shape_MNK:%u, %u, %u (smartlass/include/cute/algorithm/gemm.hpp:305)\n", msize, nsize, ksize);
+          printf("Calulate block C.coord:(%d,%d) (smartlass/include/cute/algorithm/gemm.hpp:306)\n", (int)(m), (int)(ns));
         }
       }
     }

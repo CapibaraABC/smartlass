@@ -510,14 +510,14 @@ private:
   void producer_acquire(uint32_t stage, uint32_t phase, uint32_t count, ProducerToken barrier_token) {
     // dim3 block_id = cute::block_id_in_cluster();
     if( global_thread_id == 0 ){
-      printf("global_thread_id %d: producer_acquire waiting, stage = %d, phase = %d, bar_id = %d\n", global_thread_id, stage, phase, count);
+      printf("global_thread_id %d: producer_acquire waiting, stage = %d, phase = %d, bar_id = %d (smartlass/include/cutlass/pipeline/ma100_pipeline.hpp:513)\n", global_thread_id, stage, phase, count);
     }
     detail::pipeline_check_is_producer(params_.role);
     if (barrier_token != BarrierStatus::WaitDone) {
       
       // empty_barrier_ptr_[stage].wait(phase);
       if( global_thread_id == 0 ){
-        printf("global_thread_id %d: producer_acquire done, stage = %d, phase = %d, bar_id = %d\n", global_thread_id, stage, phase, count);
+        printf("global_thread_id %d: producer_acquire done, stage = %d, phase = %d, bar_id = %d (smartlass/include/cutlass/pipeline/ma100_pipeline.hpp:520)\n", global_thread_id, stage, phase, count);
       }
     }
 
@@ -545,7 +545,7 @@ private:
 
         // dim3 block_id = cute::block_id_in_cluster();
         if( global_thread_id == 0 ){
-          printf("global_thread_id %d: producer_commit done, stage = %d, bar_id = %d\n", global_thread_id, stage, count);
+          printf("global_thread_id %d: producer_commit done, stage = %d, bar_id = %d (smartlass/include/cutlass/pipeline/ma100_pipeline.hpp:548)\n", global_thread_id, stage, count);
       // }
 
         // // STEP 1 : Commit to self
@@ -598,11 +598,11 @@ private:
     detail::pipeline_check_is_consumer(params_.role);
     // dim3 block_id = cute::block_id_in_cluster();
     if( global_thread_id == 0 ){
-      printf("global_thread_id %d: consumer_wait waiting, stage = %d, phase = %d, bar_id = %d\n", global_thread_id, stage, phase, count);
+      printf("global_thread_id %d: consumer_wait waiting, stage = %d, phase = %d, bar_id = %d (smartlass/include/cutlass/pipeline/ma100_pipeline.hpp:601)\n", global_thread_id, stage, phase, count);
     }
     // full_barrier_ptr_[stage].wait(phase);
     if( global_thread_id == 0 ){
-      printf("global_thread_id %d: consumer_wait done, stage = %d, phase = %d, bar_id = %d\n", global_thread_id, stage, phase, count);
+      printf("global_thread_id %d: consumer_wait done, stage = %d, phase = %d, bar_id = %d (smartlass/include/cutlass/pipeline/ma100_pipeline.hpp:605)\n", global_thread_id, stage, phase, count);
     }
   }
 
@@ -613,11 +613,11 @@ private:
     if (barrier_token == BarrierStatus::WaitAgain) {
       // dim3 block_id = cute::block_id_in_cluster();
       if( global_thread_id == 0 ){
-        printf("global_thread_id %d: consumer_wait waiting, stage = %d, phase = %, bar_id = %d\n", global_thread_id, stage, phase, count);
+        printf("global_thread_id %d: consumer_wait waiting, stage = %d, phase = %, bar_id = %d (smartlass/include/cutlass/pipeline/ma100_pipeline.hpp:616)\n", global_thread_id, stage, phase, count);
       }
       // full_barrier_ptr_[stage].wait(phase);
       if( global_thread_id == 0 ){
-        printf("global_thread_id %d: consumer_wait done, stage = %d, phase = %d, bar_id = %d\n", global_thread_id, stage, phase, count);
+        printf("global_thread_id %d: consumer_wait done, stage = %d, phase = %d, bar_id = %d (smartlass/include/cutlass/pipeline/ma100_pipeline.hpp:620)\n", global_thread_id, stage, phase, count);
       }
     }
   }
@@ -629,7 +629,7 @@ private:
     detail::pipeline_check_is_consumer(params_.role);
     // dim3 block_id = cute::block_id_in_cluster();
     if( global_thread_id == 0 ){
-      printf("global_thread_id %d: consumer_release done, stage = %d, bar_id = %d\n", global_thread_id, stage, count);
+      printf("global_thread_id %d: consumer_release done, stage = %d, bar_id = %d (smartlass/include/cutlass/pipeline/ma100_pipeline.hpp:632)\n", global_thread_id, stage, count);
     }
     // empty_barrier_ptr_[stage].arrive(dst_blockid_, is_signaling_thread_ & (!skip));
     #ifndef NDEBUG

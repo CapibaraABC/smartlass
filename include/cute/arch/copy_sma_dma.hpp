@@ -71,7 +71,7 @@ struct SMA_DMA_LOAD_2D
     uint x = threadIdx.x + blockIdx.x * blockDim.x + gridDim.x * blockDim.x * y;
     if (x == 0)
     {
-      printf("aurora load test\n");
+      printf("aurora load test (smartlass/include/cute/arch/copy_sma_dma.hpp:74)\n");
     }
   }
       

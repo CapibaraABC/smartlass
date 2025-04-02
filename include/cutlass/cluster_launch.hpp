@@ -181,12 +181,12 @@ struct ClusterLauncher {
 
 #if defined(CUDA_ENABLE_PREFERRED_CLUSTER)
     if (have_fallback) {
-      if (cute::initialize_preferred_cluster_launch(nullptr, grid_dims, cluster_dims, fallback_cluster_dims)) {
-        launch_attribute[1].id = cudaLaunchAttributePreferredClusterDimension;
-        launch_attribute[1].val.preferredClusterDim = {cluster_dims.x, cluster_dims.y, cluster_dims.z};
-        CUTLASS_TRACE_HOST("ClusterLauncher: Setting preferred ClusterDims = "
-            "(" << cluster_dims.x << ", " << cluster_dims.y << ", " << cluster_dims.z << ")\n");
-      }
+      // if (cute::initialize_preferred_cluster_launch(nullptr, grid_dims, cluster_dims, fallback_cluster_dims)) {
+      //   launch_attribute[1].id = cudaLaunchAttributePreferredClusterDimension;
+      //   launch_attribute[1].val.preferredClusterDim = {cluster_dims.x, cluster_dims.y, cluster_dims.z};
+      //   CUTLASS_TRACE_HOST("ClusterLauncher: Setting preferred ClusterDims = "
+      //       "(" << cluster_dims.x << ", " << cluster_dims.y << ", " << cluster_dims.z << ")\n");
+      // }
     }
     else {
       numAttrs--;

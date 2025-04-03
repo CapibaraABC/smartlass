@@ -212,7 +212,10 @@ copy(Copy_Atom<CopyArgs...>       const& copy_atom,
       for (int i = 0; i < size<1>(dst_c); ++i) {
         copy_atom.call(src_c(_,i), dst_c(_,i));
       }
-      print("---------------------\n");
+      if (thread0()) {
+        print("---------------------\n");
+      }
+      
     } else {
       CUTE_UNROLL
       for (int i = 0; i < size<1>(dst_v); ++i) {

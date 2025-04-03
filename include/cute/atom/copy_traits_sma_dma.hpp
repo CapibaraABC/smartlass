@@ -73,6 +73,9 @@ struct DMA_LOAD_Unpack
 
     auto src_coord = src.data().coord_;
     void* dst_ptr = cute::raw_pointer_cast(dst.data());
+    if (thread0()) {
+      print("   src_coord  : "); print(src_coord);
+    }
 #if 0
     auto [c0,c1,c2,c3,c4] = append<5>(src_coord, 0);
     printf("THR (%d,%d,%d) BLK (%d,%d,%d) TMACRD (%d,%d,%d,%d,%d) SMEMADDR (%p)\n",

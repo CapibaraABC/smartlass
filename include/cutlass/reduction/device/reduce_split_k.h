@@ -194,7 +194,6 @@ public:
         }
     }
     else {
-      cutlass::arch::synclog_setup();
       Kernel<ReductionKernel><<< grid, block, 0, stream >>>(params_);
     }
 

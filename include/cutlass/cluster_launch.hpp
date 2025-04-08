@@ -243,7 +243,6 @@ struct ClusterLauncher {
         "And ClusterDims = "
         "(" << cluster_dims.x << ", " << cluster_dims.y << ", " << cluster_dims.z << ")\n");
 
-    cutlass::arch::synclog_setup();
     cudaError_t status = cudaLaunchKernelExC(&cluster_launch_config.launch_config, kernel, kernel_params);
     Return_Status(status);
 #else
@@ -289,7 +288,6 @@ struct ClusterLauncher {
         "\n\tFallback  ClusterDims = "
         "(" << fallback_cluster_dims.x << ", " << fallback_cluster_dims.y << ", " << fallback_cluster_dims.z <<  ")\n");
 
-    cutlass::arch::synclog_setup();
     cudaError_t status = cudaLaunchKernelExC(&cluster_launch_config.launch_config, kernel, kernel_params);
     Return_Status(status);
 #else

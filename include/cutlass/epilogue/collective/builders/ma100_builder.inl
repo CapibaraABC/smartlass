@@ -94,13 +94,13 @@ sm90_get_epilogue_smem_swizzle_layout_atom() {
   // ColMajor C/D (M-major)
   if constexpr (cutlass::gemm::detail::is_major<0>(GmemStrideType{})) {
     return cutlass::gemm::collective::detail::ss_smem_selector<
-      cute::GMMA::Major::MN, Element, decltype(get<0>(EpilogueTile_MN{})), decltype(get<1>(EpilogueTile_MN{}))
+      cute::AMMA::Major::MN, Element, decltype(get<0>(EpilogueTile_MN{})), decltype(get<1>(EpilogueTile_MN{}))
     >();
   }
   // RowMajor C/D (N-major)
   else if constexpr (cutlass::gemm::detail::is_major<1>(GmemStrideType{})) {
     return cutlass::gemm::collective::detail::ss_smem_selector<
-      cute::GMMA::Major::K , Element, decltype(get<0>(EpilogueTile_MN{})), decltype(get<1>(EpilogueTile_MN{}))
+      cute::AMMA::Major::K , Element, decltype(get<0>(EpilogueTile_MN{})), decltype(get<1>(EpilogueTile_MN{}))
     >();
   }
   else {

@@ -44,28 +44,28 @@
 
 namespace cute {
 
-// // Fence between the async destination accumulators of GMMA & source for their dependent use
-// template <class Engine, class Layout>
-// CUTE_HOST_DEVICE
-// void
-// warpgroup_fence_operand(Tensor<Engine, Layout>& frg) {
-//   CUTE_STATIC_ASSERT(is_static<Layout>::value);
-//   if constexpr (is_same_v<typename Engine::value_type, float>) {
-//     auto f32_frg = recast<float>(frg);
-//     CUTE_UNROLL
-//     for (int i = 0; i < size(f32_frg); ++i) {
-//       warpgroup_fence_operand(f32_frg(i));
-//     }
-//   }
-//   else {
-//     CUTE_STATIC_ASSERT(is_rmem<Engine>::value);
-//     auto u32_frg = recast<uint32_t>(frg);
-//     CUTE_UNROLL
-//     for (int i = 0; i < size(u32_frg); ++i) {
-//       warpgroup_fence_operand(u32_frg(i));
-//     }
-//   }
-// }
+// Fence between the async destination accumulators of GMMA & source for their dependent use
+template <class Engine, class Layout>
+CUTE_HOST_DEVICE
+void
+warpgroup_fence_operand(Tensor<Engine, Layout>& frg) {
+  CUTE_STATIC_ASSERT(is_static<Layout>::value);
+  if constexpr (is_same_v<typename Engine::value_type, float>) {
+    auto f32_frg = recast<float>(frg);
+    CUTE_UNROLL
+    for (int i = 0; i < size(f32_frg); ++i) {
+      warpgroup_fence_operand(f32_frg(i));
+    }
+  }
+  else {
+    CUTE_STATIC_ASSERT(is_rmem<Engine>::value);
+    auto u32_frg = recast<uint32_t>(frg);
+    CUTE_UNROLL
+    for (int i = 0; i < size(u32_frg); ++i) {
+      warpgroup_fence_operand(u32_frg(i));
+    }
+  }
+}
 
 namespace AURORA::AMMA {
 

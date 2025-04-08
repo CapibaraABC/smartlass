@@ -37,7 +37,7 @@
 #include "cutlass/detail/collective.hpp"
 #include "cutlass/detail/dependent_false.hpp"
 
-#include "cute/atom/mma_traits_sm90_gmma.hpp"
+#include "cute/atom/mma_traits_aurora_gmma.hpp"
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -56,24 +56,24 @@ constexpr int sm90_smem_capacity_bytes = 232448;
 
 // Maps 2.x A matrix layout tag to respective GMMA major mode enum
 template <class LayoutA>
-constexpr cute::GMMA::Major
+constexpr cute::AMMA::Major
 gmma_aurora_tag_to_major_A() {
   if constexpr (cutlass::gemm::detail::is_mn_major_A<LayoutA>()) {
-    return cute::GMMA::Major::MN;
+    return cute::AMMA::Major::MN;
   }
   else {
-    return cute::GMMA::Major::K;
+    return cute::AMMA::Major::K;
   }
 }
 
 template <class LayoutB>
-constexpr cute::GMMA::Major
+constexpr cute::AMMA::Major
 gmma_aurora_tag_to_major_B() {
   if constexpr (cutlass::gemm::detail::is_mn_major_B<LayoutB>()) {
-    return cute::GMMA::Major::MN;
+    return cute::AMMA::Major::MN;
   }
   else {
-    return cute::GMMA::Major::K;
+    return cute::AMMA::Major::K;
   }
 }
 
@@ -82,7 +82,7 @@ gmma_aurora_tag_to_major_B() {
 //   or hierarchically
 //   ((BLK_MN0,BLK_MN1,...),(BLK_K0,BLK_K1,...))
 //   and returns the largest GMMA::Layout that fits BLK_MN0 and BLK_K0
-template <cute::GMMA::Major major, class ElementType, class BLK_MN, class BLK_K>
+template <cute::AMMA::Major major, class ElementType, class BLK_MN, class BLK_K>
 CUTE_HOST_DEVICE constexpr
 auto
 ss_smem_selector()
@@ -95,40 +95,40 @@ ss_smem_selector()
   static_assert(BLK_MN0 % 8 == 0, "BLK_MN0 must be a multiple of 8.");
   static_assert(BLK_K0 % 8 == 0,  "BLK_K0 must be a multiple of 8.");
 
-  if constexpr (major == GMMA::Major::MN) {
-    if constexpr (BLK_MN0 % size<0>(GMMA::Layout_MN_SW128_Atom<ElementType>{}) == 0) {
-      return GMMA::Layout_MN_SW128_Atom<ElementType>{};
+  if constexpr (major == AMMA::Major::MN) {
+    if constexpr (BLK_MN0 % size<0>(AMMA::Layout_MN_SW128_Atom<ElementType>{}) == 0) {
+      return AMMA::Layout_MN_SW128_Atom<ElementType>{};
     }
-    else if constexpr (BLK_MN0 % size<0>(GMMA::Layout_MN_SW64_Atom<ElementType>{}) == 0) {
-      return GMMA::Layout_MN_SW64_Atom<ElementType>{};
+    else if constexpr (BLK_MN0 % size<0>(AMMA::Layout_MN_SW64_Atom<ElementType>{}) == 0) {
+      return AMMA::Layout_MN_SW64_Atom<ElementType>{};
     }
-    else if constexpr (BLK_MN0 % size<0>(GMMA::Layout_MN_SW32_Atom<ElementType>{}) == 0) {
-      return GMMA::Layout_MN_SW32_Atom<ElementType>{};
+    else if constexpr (BLK_MN0 % size<0>(AMMA::Layout_MN_SW32_Atom<ElementType>{}) == 0) {
+      return AMMA::Layout_MN_SW32_Atom<ElementType>{};
     }
-    else if constexpr (BLK_MN0 % size<0>(GMMA::Layout_MN_INTER_Atom<ElementType>{}) == 0) {
-      return GMMA::Layout_MN_INTER_Atom<ElementType>{};
+    else if constexpr (BLK_MN0 % size<0>(AMMA::Layout_MN_INTER_Atom<ElementType>{}) == 0) {
+      return AMMA::Layout_MN_INTER_Atom<ElementType>{};
     }
     else {
-      static_assert(BLK_MN0 % size<0>(GMMA::Layout_MN_INTER_Atom<ElementType>{}) == 0,
-                    "BLK_MN0 must be a multiple of size<0>(GMMA::Layout_MN_INTER_Atom<ElementType>{})");
+      static_assert(BLK_MN0 % size<0>(AMMA::Layout_MN_INTER_Atom<ElementType>{}) == 0,
+                    "BLK_MN0 must be a multiple of size<0>(AMMA::Layout_MN_INTER_Atom<ElementType>{})");
     }
   }
-  else if constexpr (major == GMMA::Major::K) {
-    if constexpr (BLK_K0 % size<1>(GMMA::Layout_K_SW128_Atom<ElementType>{}) == 0) {
-      return GMMA::Layout_K_SW128_Atom<ElementType>{};
+  else if constexpr (major == AMMA::Major::K) {
+    if constexpr (BLK_K0 % size<1>(AMMA::Layout_K_SW128_Atom<ElementType>{}) == 0) {
+      return AMMA::Layout_K_SW128_Atom<ElementType>{};
     }
-    else if constexpr (BLK_K0 % size<1>(GMMA::Layout_K_SW64_Atom<ElementType>{}) == 0) {
-      return GMMA::Layout_K_SW64_Atom<ElementType>{};
+    else if constexpr (BLK_K0 % size<1>(AMMA::Layout_K_SW64_Atom<ElementType>{}) == 0) {
+      return AMMA::Layout_K_SW64_Atom<ElementType>{};
     }
-    else if constexpr (BLK_K0 % size<1>(GMMA::Layout_K_SW32_Atom<ElementType>{}) == 0) {
-      return GMMA::Layout_K_SW32_Atom<ElementType>{};
+    else if constexpr (BLK_K0 % size<1>(AMMA::Layout_K_SW32_Atom<ElementType>{}) == 0) {
+      return AMMA::Layout_K_SW32_Atom<ElementType>{};
     }
-    else if constexpr (BLK_K0 % size<1>(GMMA::Layout_K_INTER_Atom<ElementType>{}) == 0) {
-      return GMMA::Layout_K_INTER_Atom<ElementType>{};
+    else if constexpr (BLK_K0 % size<1>(AMMA::Layout_K_INTER_Atom<ElementType>{}) == 0) {
+      return AMMA::Layout_K_INTER_Atom<ElementType>{};
     }
     else {
-      static_assert(BLK_K0 % size<1>(GMMA::Layout_K_INTER_Atom<ElementType>{}) == 0,
-                    "BLK_K0 must be a multiple of size<1>(GMMA::Layout_K_INTER_Atom<ElementType>{})");
+      static_assert(BLK_K0 % size<1>(AMMA::Layout_K_INTER_Atom<ElementType>{}) == 0,
+                    "BLK_K0 must be a multiple of size<1>(AMMA::Layout_K_INTER_Atom<ElementType>{})");
     }
   }
 }

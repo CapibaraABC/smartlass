@@ -213,15 +213,15 @@ struct CollectiveBuilder<
   static_assert(detail::is_aligned<ElementA, AlignmentA, ElementB, AlignmentB, detail::cp_async_min_alignment_bytes>(),
                 "Minimum alignment required for cp.async is 4B.");
 
-  static constexpr cute::GMMA::Major GmmaMajorA = detail::gmma_aurora_tag_to_major_A<GmemLayoutATag>();
-  static constexpr cute::GMMA::Major GmmaMajorB = detail::gmma_aurora_tag_to_major_B<GmemLayoutBTag>();
+  static constexpr cute::AMMA::Major GmmaMajorA = detail::gmma_aurora_tag_to_major_A<GmemLayoutATag>();
+  static constexpr cute::AMMA::Major GmmaMajorB = detail::gmma_aurora_tag_to_major_B<GmemLayoutBTag>();
   static constexpr bool SwapAB = detail::is_swapAB<ElementA, GmemLayoutATag, ElementB, GmemLayoutBTag>();
   // static constexpr bool IsWarpSpecializedTransposeB = detail::is_warpspecialized_transpose_B<
   //     ElementA, GmemLayoutATag, ElementB, GmemLayoutBTag, KernelScheduleType>();
   // static_assert(GmmaMajorA == GMMA::Major::MN,  "GmmaMajorA == GMMA::Major::K");
   // static_assert(GmmaMajorB == GMMA::Major::MN,  "GmmaMajorB == GMMA::Major::K");
-  static_assert(GmmaMajorB == GMMA::Major::K,  "GmmaMajorB == GMMA::Major::MN");
-  static_assert(GmmaMajorA == GMMA::Major::K,  "GmmaMajorA == GMMA::Major::MN");
+  static_assert(GmmaMajorB == AMMA::Major::K,  "GmmaMajorB == GMMA::Major::MN");
+  static_assert(GmmaMajorA == AMMA::Major::K,  "GmmaMajorA == GMMA::Major::MN");
 
 
   using AtomLayoutMNK = cute::conditional_t<cute::is_same_v<KernelScheduleType, KernelCooperative>,

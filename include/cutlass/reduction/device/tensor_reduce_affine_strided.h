@@ -301,8 +301,7 @@ public:
     // Shared memory size
     int shared_mem_bytes = sizeof(typename ReductionKernel::SharedStorage);
 
-    // Launch the kernel
-    cutlass::arch::synclog_setup();
+    // Launch the kernel    
     Kernel<ReductionKernel><<< grid_shape, threadblock_shape, shared_mem_bytes, stream >>>(params);
 
     // Check error condition

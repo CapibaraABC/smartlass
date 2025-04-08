@@ -32,8 +32,6 @@
 
 #include <cute/config.hpp>                 // CUTE_HOST_DEVICE
 
-#include "cutlass/arch/synclog.hpp"
-
 // Config
 #if (defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 900) && defined(__CUDA_ARCH_FEAT_SM90_ALL))
 #  define CUTE_ARCH_MMA_SM90A_ENABLED
@@ -45,23 +43,23 @@ namespace cute {
 // Warpgroup sync primitives
 //shouldn't be annotated
 
-// CUTE_HOST_DEVICE
-// void
-// warpgroup_arrive()
-// {
+CUTE_HOST_DEVICE
+void
+warpgroup_arrive()
+{
 // #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
 //   cutlass::arch::synclog_emit_warpgroup_arrive(__LINE__);
 //   asm volatile ("wgmma.fence.sync.aligned;\n" ::: "memory");
 // #else
 //   CUTE_INVALID_CONTROL_PATH("Attempting to use wgmma.fence without CUTE_ARCH_MMA_SM90A_ENABLED");
 // #endif
-// }
+}
 
-// template <int N>
-// CUTE_HOST_DEVICE
-// void
-// warpgroup_wait()
-// {
+template <int N>
+CUTE_HOST_DEVICE
+void
+warpgroup_wait()
+{
 //   static_assert(N >= 0 && N <= 7, "WGMMA wait: N must be in range [0, 7]");
 // #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
 //   cutlass::arch::synclog_emit_warpgroup_wait(__LINE__, N);
@@ -69,39 +67,39 @@ namespace cute {
 // #else
 //   CUTE_INVALID_CONTROL_PATH("Attempting to use wgmma.wait_group<N> without CUTE_ARCH_MMA_SM90A_ENABLED");
 // #endif
-// }
+}
 
-// // Marks the commit point for one or more sized batch of warpgroup MMAs.
-// CUTE_HOST_DEVICE
-// void
-// warpgroup_commit_batch()
-// {
+// Marks the commit point for one or more sized batch of warpgroup MMAs.
+CUTE_HOST_DEVICE
+void
+warpgroup_commit_batch()
+{
 // #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
 //   cutlass::arch::synclog_emit_warpgroup_commit_batch(__LINE__);
 //   asm volatile("wgmma.commit_group.sync.aligned;\n" ::: "memory");
 // #else
 //   CUTE_INVALID_CONTROL_PATH("Attempting to use wgmma.commit_group without CUTE_ARCH_MMA_SM90A_ENABLED");
 // #endif
-// }
+}
 
-// CUTE_HOST_DEVICE
-// void
-// warpgroup_fence_operand(uint32_t& reg) {
-//   // MSVC emits a build error for 'asm volatile'
-//   // even if it only occurs in a __device__ function.
-//   // This prevents the error.
+CUTE_HOST_DEVICE
+void
+warpgroup_fence_operand(uint32_t& reg) {
+  // MSVC emits a build error for 'asm volatile'
+  // even if it only occurs in a __device__ function.
+  // This prevents the error.
 // #if defined(__CUDA_ARCH__)
 //   asm volatile("" : "+r"(reg) :: "memory");
 // #endif
-// }
+}
 
-// CUTE_HOST_DEVICE
-// void
-// warpgroup_fence_operand(float& reg) {
+CUTE_HOST_DEVICE
+void
+warpgroup_fence_operand(float& reg) {
 // #if defined(__CUDA_ARCH__)
 //   asm volatile("" : "+f"(reg) :: "memory");
 // #endif
-// }
+}
 
 namespace AURORA::AMMA {
 // // namespace SM90::GMMA {

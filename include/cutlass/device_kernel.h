@@ -81,7 +81,6 @@ void Kernel(typename Operator::Params params) {
   Operator op;
 
   op(params, *shared_storage);
-  cutlass::arch::synclog_print();
 }
 
 
@@ -96,7 +95,6 @@ void Kernel2(typename Operator::Params params) {
       reinterpret_cast<typename Operator::SharedStorage *>(SharedStorageBase);
 
   Operator::invoke(params, *shared_storage);
-  cutlass::arch::synclog_print();
 
 }
 
@@ -120,7 +118,6 @@ void device_kernel(CUTLASS_GRID_CONSTANT typename Operator::Params const params)
   extern __shared__ char smem[];
   Operator op;
   op(params, smem);
-  cutlass::arch::synclog_print();
 
 }
 

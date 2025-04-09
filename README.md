@@ -283,6 +283,10 @@ the architectures to build CUTLASS for by changing the CMake configuration setti
 `CUTLASS_NVCC_ARCHS`.
 
 ```bash
+# update third_party
+$ git submodule sync
+$ git submodule update --init --recursive
+
 $ mkdir build && cd build
 
 $ cmake .. -DCUTLASS_NVCC_ARCHS=80               # compiles for NVIDIA's Ampere Architecture

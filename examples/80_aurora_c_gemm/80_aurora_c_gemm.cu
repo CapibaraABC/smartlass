@@ -456,13 +456,9 @@ int run(Options &options)
     }
 
     SPDLOG_INFO("  Problem Size: {}x{}x{}", options.m, options.n, options.k);
-    spdlog::info("  Rasterization: {} with a maximum CTA swizzle of ", raster, options.swizzle);
-    spdlog::info("  Avg runtime: {} ms", result.avg_runtime_ms);
-    spdlog::info("  GFLOPS: {}", result.gflops);
-    // std::cout << "  Problem Size: " << options.m << 'x' << options.n << 'x' << options.k << std::endl;
-    // std::cout << "  Rasterization: " << raster << " with a maximum CTA swizzle of " << options.swizzle << std::endl;
-    // std::cout << "  Avg runtime: " << result.avg_runtime_ms << " ms" << std::endl;
-    // std::cout << "  GFLOPS: " << result.gflops << std::endl;
+    SPDLOG_INFO("  Rasterization: {} with a maximum CTA swizzle of ", raster, options.swizzle);
+    SPDLOG_INFO("  Avg runtime: {} ms", result.avg_runtime_ms);
+    SPDLOG_INFO("  GFLOPS: {}", result.gflops);
   }
 
   return 0;
@@ -474,7 +470,6 @@ int run(Options &options)
 
 int main(int argc, char const **args) {
 
-  spdlog::info("success in");
   // CUTLASS must be compiled with CUDA 12.0 Toolkit to run this example
   // and must have compute capability at least 90.
   if (__CUDACC_VER_MAJOR__ < 12) {

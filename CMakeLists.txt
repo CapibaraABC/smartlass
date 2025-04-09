@@ -642,13 +642,6 @@ set(CUTLASS_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/include CACHE PATH "CUTLASS 
 
 set(CUTLASS_GENERATOR_DIR ${CMAKE_CURRENT_SOURCE_DIR}/tools/library CACHE INTERNAL "Location of generator scripts")
 
-####################################smartlog####################################
-# find_package(spdlog REQUIRED)
-
-# target_link_libraries(CUTLASS INTERFACE spdlog::spdlog)
-
-####################################smartlog####################################
-
 # The following utility directory is needed even if the tools build is disabled, so it exists here.
 set(CUTLASS_TOOLS_UTIL_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/tools/util/include CACHE INTERNAL "")
 

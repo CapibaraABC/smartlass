@@ -158,7 +158,7 @@ else()
 endif()
 set(CUTLASS_ENABLE_PROFILER_UNIT_TESTS ${CUTLASS_ENABLE_PROFILER_UNIT_TESTS_INIT} CACHE BOOL "Enable CUTLASS Profiler-based Unit Tests")
 set(CUTLASS_ENABLE_SELF_CONTAINED_INCLUDES_CHECK ON CACHE BOOL "Enable CUTLASS check for self-contained header includes")
-
+set(CUTLASS_ENABLE_SMARTLOG ON CACHE BOOL "Enable CUTLASS use smartlog")
 ################################################################################
 
 set(CUTLASS_NVCC_ARCHS_SUPPORTED "")
@@ -642,6 +642,13 @@ set(CUTLASS_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/include CACHE PATH "CUTLASS 
 
 set(CUTLASS_GENERATOR_DIR ${CMAKE_CURRENT_SOURCE_DIR}/tools/library CACHE INTERNAL "Location of generator scripts")
 
+####################################smartlog####################################
+# find_package(spdlog REQUIRED)
+
+# target_link_libraries(CUTLASS INTERFACE spdlog::spdlog)
+
+####################################smartlog####################################
+
 # The following utility directory is needed even if the tools build is disabled, so it exists here.
 set(CUTLASS_TOOLS_UTIL_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/tools/util/include CACHE INTERNAL "")
 
@@ -1099,6 +1106,11 @@ if (CUTLASS_ENABLE_TESTS)
 
 endif()
 
+if (CUTLASS_ENABLE_SMARTLOG)
+  add_subdirectory(third_party/smartlog)
+  target_link_libraries(CUTLASS INTERFACE spdlog::spdlog)
+endif()
+
 if (CUTLASS_INSTALL_TESTS)
 
   file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/ctest")
@@ -1140,6 +1152,8 @@ install(
     ${CMAKE_CURRENT_BINARY_DIR}/NvidiaCutlassConfigVersion.cmake
   DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/NvidiaCutlass/
   )
+
+install(TARGETS spdlog EXPORT NvidiaCutlass DESTINATION ${CMAKE_INSTALL_LIBDIR})
 
 install(
   EXPORT NvidiaCutlass

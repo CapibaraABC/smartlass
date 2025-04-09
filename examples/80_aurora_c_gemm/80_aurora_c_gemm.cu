@@ -470,6 +470,7 @@ int run(Options &options)
 
 int main(int argc, char const **args) {
 
+  spdlog::info("success in");
   // CUTLASS must be compiled with CUDA 12.0 Toolkit to run this example
   // and must have compute capability at least 90.
   if (__CUDACC_VER_MAJOR__ < 12) {

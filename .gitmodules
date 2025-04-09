@@ -1,0 +1,4 @@
+[submodule "third_party/smartlog"]
+	path = third_party/smartlog
+	url = git@github.com:CapibaraABC/smartlog.git
+	branch = dev

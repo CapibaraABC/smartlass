@@ -78,6 +78,8 @@
 #include "cutlass/util/reference/device/tensor_compare.h"
 #include "cutlass/util/reference/device/tensor_fill.h"
 
+#include "spdlog/spdlog.h"
+
 #include "helper.h"
 
 using namespace cute;
@@ -453,10 +455,10 @@ int run(Options &options)
       raster = "Along M";
     }
 
-    std::cout << "  Problem Size: " << options.m << 'x' << options.n << 'x' << options.k << std::endl;
-    std::cout << "  Rasterization: " << raster << " with a maximum CTA swizzle of " << options.swizzle << std::endl;
-    std::cout << "  Avg runtime: " << result.avg_runtime_ms << " ms" << std::endl;
-    std::cout << "  GFLOPS: " << result.gflops << std::endl;
+    SPDLOG_INFO("  Problem Size: {}x{}x{}", options.m, options.n, options.k);
+    SPDLOG_INFO("  Rasterization: {} with a maximum CTA swizzle of ", raster, options.swizzle);
+    SPDLOG_INFO("  Avg runtime: {} ms", result.avg_runtime_ms);
+    SPDLOG_INFO("  GFLOPS: {}", result.gflops);
   }
 
   return 0;

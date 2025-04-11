@@ -34,7 +34,7 @@
 #include "cutlass/fast_math.h"
 #include "cutlass/kernel_hardware_info.hpp"
 #include "cute/arch/cluster_sm90.hpp"
-#include "cutlass/arch/reg_reconfig.h"
+// #include "cutlass/arch/reg_reconfig.h"
 // #include "cutlass/arch/mma_sm90.h"
 #include "cutlass/epilogue/collective/detail.hpp"
 #include "cutlass/gemm/gemm.h"

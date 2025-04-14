@@ -302,8 +302,9 @@ gemm(MMA_Atom<MMA>       const& mma,
           uint32_t msize = size<0>(shape);
           uint32_t nsize = size<1>(shape);
           uint32_t ksize = size<2>(shape);
-          printf("MMA_Atom.Shape_MNK:%u, %u, %u (smartlass/include/cute/algorithm/gemm.hpp:305)\n", msize, nsize, ksize);
-          printf("Calulate block C.coord:(%d,%d) (smartlass/include/cute/algorithm/gemm.hpp:306)\n", (int)(m), (int)(ns));
+          printf("==== MMA_Atom# Shape       : %u, %u, %u\n", msize, nsize, ksize);
+          printf("==== MMA_Atom# loop        : (%d,%d) @_[%d]_[%d]\n", (int)M, (int)N, (int)(m), (int)(ns));
+          printf("==== MMA_Atom# Smem C.coord: (%d,%d)\n", (int)(m*msize), (int)(ns*nsize));
         }
       }
     }
@@ -325,15 +326,32 @@ gemm(MMA_Atom<MMA>       const& mma,
   {
 #if 1  // NOTE: Row- vs Col- major could depend on the C-matrix order... (which we can test)
     // Row-major kinked serpentine iteration
+    using ShapeMNK = typename MMA_Atom<MMA>::Shape_MNK; 
+    ShapeMNK shape; 
+    uint32_t msize = size<0>(shape);
+    uint32_t nsize = size<1>(shape);
+    uint32_t ksize = size<2>(shape);
+    
     CUTE_UNROLL
     for (int m = 0; m < M; m += 2) {
       CUTE_UNROLL
       for (int n = 0; n < N; ++n) {
         int ns = (m & 2) ? N-1-n : n;
         gemm(mma, D(_,m+0,ns), A(_,m+0), B(_,ns), C(_,m+0,ns));
+        if(thread0()&&blockIdx.x == 0 && blockIdx.y == 0){
+          printf("==== MMA_Atom# Shape       : %u, %u, %u\n", msize, nsize, ksize);
+          printf("==== MMA_Atom# loop        : (%d,%d) @_[%d]_[%d]\n", (int)M, (int)N, (int)(m), (int)(ns));
+          printf("==== MMA_Atom# Smem C.coord: (%d,%d)\n", (int)(m*msize), (int)(ns*nsize));
+        }
 
         if (m+1 < M) {
           gemm(mma, D(_,m+1,ns), A(_,m+1), B(_,ns), C(_,m+1,ns));
+          if(thread0()){
+            printf("==== MMA_Atom# loop        : (%d,%d) @_[%d]_[%d]\n", (int)M, (int)N, (int)(m+1), (int)(ns));
+          }
+        }
+        if(thread0()){
+          printf("==== MMA_Atom# Smem C.coord: (%d,%d)\n", (int)(m*msize), (int)(ns*nsize));
         }
       }
     }
@@ -363,6 +381,16 @@ gemm(MMA_Atom<MMA>       const& mma,
       CUTE_UNROLL
       for (int n = 0; n < N; ++n) {
         int ns = (m & 1) ? N-1-n : n;  // Serpentine coordinate
+        if(thread0()&&blockIdx.x == 0 && blockIdx.y == 0){
+          using ShapeMNK = typename MMA_Atom<MMA>::Shape_MNK; 
+          ShapeMNK shape; 
+          uint32_t msize = size<0>(shape);
+          uint32_t nsize = size<1>(shape);
+          uint32_t ksize = size<2>(shape);
+          printf("==== MMA_Atom# Shape       : %u, %u, %u\n", msize, nsize, ksize);
+          printf("==== MMA_Atom# loop        : (%d,%d) @_[%d]_[%d]\n", (int)M, (int)N, (int)(m), (int)(ns));
+          printf("==== MMA_Atom# Smem C.coord: (%d,%d)\n", (int)(m*msize), (int)(ns*nsize));
+        }
         gemm(mma, D(_,m,ns), A(_,m), B(_,ns), C(_,m,ns));
       }
     }
@@ -376,6 +404,16 @@ gemm(MMA_Atom<MMA>       const& mma,
       CUTE_UNROLL
       for (int m = 0; m < M; ++m) {
         int ms = (n & 1) ? M-1-m : m;  // Serpentine coordinate
+        if(thread0()&&blockIdx.x == 0 && blockIdx.y == 0){
+          using ShapeMNK = typename MMA_Atom<MMA>::Shape_MNK; 
+          ShapeMNK shape; 
+          uint32_t msize = size<0>(shape);
+          uint32_t nsize = size<1>(shape);
+          uint32_t ksize = size<2>(shape);
+          printf("==== MMA_Atom# Shape       : %u, %u, %u\n", msize, nsize, ksize);
+          printf("==== MMA_Atom# loop        : (%d,%d) @_[%d]_[%d]\n", (int)M, (int)N, (int)(ms), (int)(n));
+          printf("==== MMA_Atom# Smem C.coord: (%d,%d)\n", (int)(ms*msize), (int)(n*nsize));
+        }
         gemm(mma, D(_,ms,n), A(_,ms), B(_,n), C(_,ms,n));
       }
     }
@@ -388,6 +426,16 @@ gemm(MMA_Atom<MMA>       const& mma,
       CUTE_UNROLL
       for (int m = 0; m < M; ++m) {
         int ms = (n & 1) ? M-1-m : m;  // Serpentine coordinate
+        if(thread0()&&blockIdx.x == 0 && blockIdx.y == 0){
+          using ShapeMNK = typename MMA_Atom<MMA>::Shape_MNK; 
+          ShapeMNK shape; 
+          uint32_t msize = size<0>(shape);
+          uint32_t nsize = size<1>(shape);
+          uint32_t ksize = size<2>(shape);
+          printf("==== MMA_Atom# Shape       : %u, %u, %u\n", msize, nsize, ksize);
+          printf("==== MMA_Atom# loop        : (%d,%d) @_[%d]_[%d]\n", (int)M, (int)N, (int)(ms), (int)(n));
+          printf("==== MMA_Atom# Smem C.coord: (%d,%d)\n", (int)(ms*msize), (int)(n*nsize));
+        }
         gemm(mma, D(_,ms,n), A(_,ms), B(_,n), C(_,ms,n));
       }
     }

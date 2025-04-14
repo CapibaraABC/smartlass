@@ -101,11 +101,8 @@ gemm_device(ProblemShape shape_MNK, CtaTiler cta_tiler,
   //   The tma_partition reorders and offsets mode-0 according to the tma_x atom and the multicast info.
   //
 
-   
-//   auto cta_tma_a = tma_a.get_slice(blockIdx.x);
-//   auto cta_tma_b = tma_b.get_slice(blockIdx.y);
-  auto cta_dma_a = dma_a.get_slice(0);
-  auto cta_dma_b = dma_b.get_slice(0);
+  auto cta_dma_a = dma_a.get_slice(blockIdx.x);
+  auto cta_dma_b = dma_b.get_slice(blockIdx.y);
   Tensor tAgA = cta_dma_a.partition_S(gA);                      // (TMA,TMA_M,TMA_K,k)
   Tensor tAsA = cta_dma_a.partition_D(sA);
   Tensor tBgB = cta_dma_b.partition_S(gB);                                                   // (TMA,TMA_N,TMA_K,k)
@@ -127,6 +124,10 @@ gemm_device(ProblemShape shape_MNK, CtaTiler cta_tiler,
   //
   // PREFETCH
   //
+  if(thread0()){
+    printf("==== CTA# gridDim      : (%d, %d, %d)\n", gridDim.x, gridDim.y, gridDim.z);
+    printf("==== CTA# blockDim     : (%d, %d, %d)\n", blockDim.x, blockDim.y, blockDim.z);
+  }  
 
   auto K_PIPE_MAX = size<3>(tAsA);
 
@@ -147,6 +148,7 @@ gemm_device(ProblemShape shape_MNK, CtaTiler cta_tiler,
   // Ensure barrier init is complete on all CTAs
   cluster_sync();
   using BarrierType = typename MainloopPipeline::ProducerBarrierType;
+
   // Start async loads for all pipes
   int prologue_iterations = min(K_PIPE_MAX, k_tile_count);
   CUTE_UNROLL
@@ -157,7 +159,15 @@ gemm_device(ProblemShape shape_MNK, CtaTiler cta_tiler,
       // Set expected Tx Bytes after each reset / init
       mainloop_pipeline.producer_acquire(mainloop_pipe_producer_state);
       BarrierType* tma_barrier = mainloop_pipeline.producer_get_barrier(mainloop_pipe_producer_state);
+      if(thread0())
+      {
+        printf("================================\nA matrix loading, loading shape is:");print(shape(tAgA(_,_,0,pipe)));print("\n");
+      }
       copy(dma_a.with(* tma_barrier), tAgA(_,_,_,pipe), tAsA(_,_,_,pipe));
+      if(thread0())
+      {
+        printf("================================\nB matrix loading, loading shape is:");print(shape(tBgB(_,_,0,pipe)));print("\n");
+      }
       copy(dma_b.with(* tma_barrier), tBgB(_,_,_,pipe), tBsB(_,_,_,pipe));
       ++mainloop_pipe_producer_state;
     }
@@ -209,7 +219,12 @@ gemm_device(ProblemShape shape_MNK, CtaTiler cta_tiler,
   // A PipelineState is a circular pipe index [.index()] and a pipe phase [.phase()]
   //   that flips each cycle through K_PIPE_MAX.
   uint cal_loop = 0;
-
+  if(thread0()){
+    int blockLoopNum = (int)size<3>(tAgA);
+    printf("==== MMA_CTA# blockShape   : (%d, %d, %d)\n", (int)size<0>(cta_tiler), (int)size<1>(cta_tiler), (int)size<2>(cta_tiler));
+    printf("==== MMA_CTA# blockLoop    : (%d, %d)@_[%u]_[%u]\n", gridDim.x, gridDim.y, blockIdx.x, blockIdx.y);
+    printf("==== MMA_CTA# Gmem C.coord : (%d, %d), Gmem C.Shape:(%d, %d)\n", blockIdx.x, blockIdx.y, (int)size<0>(cta_tiler), (int)size<1>(cta_tiler));
+  }
   CUTE_NO_UNROLL
   while (cal_loop !=  size<3>(tAgA))
   {
@@ -236,7 +251,15 @@ gemm_device(ProblemShape shape_MNK, CtaTiler cta_tiler,
       // Set expected Tx Bytes after each reset / init
       mainloop_pipeline.producer_acquire(mainloop_pipe_producer_state);
       BarrierType* tma_barrier = mainloop_pipeline.producer_get_barrier(mainloop_pipe_producer_state);
+      if(thread0())
+      {
+        printf("================================\nA matrix loading, loading shape is:");print(shape(tAgA(_,_,0,pipe)));print("\n");
+      }
       copy(dma_a.with(* tma_barrier), tAgA(_,_,_,k_tile), tAsA(_,_,_,pipe));
+      if(thread0())
+      {
+        printf("================================\nB matrix loading, loading shape is:");print(shape(tBgB(_,_,0,pipe)));print("\n");
+      }
       copy(dma_b.with(* tma_barrier), tBgB(_,_,_,k_tile), tBsB(_,_,_,pipe));
       ++mainloop_pipe_producer_state;
       --k_tile_count;

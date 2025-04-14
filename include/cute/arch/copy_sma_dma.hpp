@@ -104,7 +104,7 @@ struct SMA_DMA_LOAD
   CUTE_HOST_DEVICE static void
   copy(void const* desc_ptr, uint64_t* mbar_ptr, uint64_t cache_hint,
        void      * smem_ptr,
-       int32_t const& crd0, int32_t const& crd1, int32_t const& crd2)
+       int32_t const& crd0, int32_t const& crd1, int32_t const& crd2 = 0)
   {
     return SMA_DMA_LOAD_2D::copy(desc_ptr, mbar_ptr, cache_hint, smem_ptr, crd0, crd1);
   }

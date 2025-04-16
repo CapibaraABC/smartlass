@@ -381,7 +381,7 @@ struct TiledMMA : MMA_Atom
     // Tile the tensor for the C-threads
     auto thr_tile = make_tile(_,
                               make_tile(make_layout(size<0>(AtomAuroraThrLayout_MNK{})),
-                                        make_layout(size<2>(AtomAuroraThrLayout_MNK{}))));
+                                        make_layout(size<1>(AtomAuroraThrLayout_MNK{}))));
     // auto thr_tile = make_tile(_,
     //                           make_tile(make_layout(size<1>(thr_layout_vmnk_)),
     //                                     make_layout(size<2>(thr_layout_vmnk_))));

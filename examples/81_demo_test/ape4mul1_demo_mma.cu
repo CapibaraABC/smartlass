@@ -260,7 +260,7 @@ gemm_device(ProblemShape shape_MNK, CtaTiler cta_tiler,
     
     // MMAs to cover 1 K_TILE
     warpgroup_arrive();
-    //gemm(mma, tCrA(_,_,_,read_pipe), tCrB(_,_,_,read_pipe), tCrC);     // (V,M) x (V,N) => (V,M,N)
+    // gemm(mma, tCrA(_,_,_,read_pipe), tCrB(_,_,_,read_pipe), tCrC);     // (V,M) x (V,N) => (V,M,N)
     gemm(mma, aurora_tCrA(_,_,_,read_pipe), aurora_tCrB(_,_,_,read_pipe), aurora_tCrC);
     warpgroup_commit_batch();
 
@@ -345,11 +345,13 @@ gemm_nt(int m, int n, int k,
   // TiledMMA tiled_mma = make_tiled_mma(Aurora_128x128x128_F16F16F16_SS<AMMA::Major::MN,AMMA::Major::MN>{});
 
   //define the layout for ape 4*1
+  //way1: use this way to define 4*1 threads
   using auroraMMAATOM = Aurora_64x64x16_F16F16F16_SS<AMMA::Major::MN,AMMA::Major::MN>;
-  // TiledMMA tiled_mma = make_tiled_mma(auroraMMAATOM{}, 
-  //                                     MMA_Traits<auroraMMAATOM>::AuroraThrLayout_MNK{}); 
+  TiledMMA tiled_mma = make_tiled_mma(auroraMMAATOM{}, 
+                                      MMA_Traits<auroraMMAATOM>::AuroraThrLayout_MNK{}); 
 
-  TiledMMA tiled_mma = make_tiled_mma(Aurora_64x64x16_F16F16F16_SS<AMMA::Major::MN,AMMA::Major::MN>{});                                   
+  //way2: only 1 threads. we split A to 4*1, B to 1*1, C to 4*1, and each thread hold only 1 mma_atom                                    
+  // TiledMMA tiled_mma = make_tiled_mma(Aurora_64x64x16_F16F16F16_SS<AMMA::Major::MN,AMMA::Major::MN>{});                                   
 
   // Define the TMAs
   // Create Global memory tensors for TMA inspection

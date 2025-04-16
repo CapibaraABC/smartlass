@@ -531,10 +531,14 @@ struct MMA_Traits<Aurora_64x64x16_F16F16F16_SS<tnspA, tnspB, scaleA, scaleB>>
   using FrgTypeB = AMMA::smem_desc<tnspB>;
 
   using Shape_MNK = Shape<_64,_64,_16>;
-  using ThrID   = Layout<_128>;
+  // using ThrID   = Layout<_128>;
+  using ThrID   = Layout<_1>;
   using ALayout = AMMA::ABLayout< 64, 16>;
   using BLayout = AMMA::ABLayout< 64, 16>;
   using CLayout = AMMA::CLayout_64x64;
+
+  using Split_MNK = decltype(make_tuple(Int<4>{}, Int<1>{}, Int<1>{}));
+  using AuroraThrLayout_MNK = Layout<Shape<_4, _1, _1>>;
 
   AMMA::ScaleOut accumulate_ = AMMA::ScaleOut::One;
 };
@@ -564,6 +568,9 @@ struct MMA_Traits<Aurora_128x128x128_F16F16F16_SS<tnspA, tnspB, scaleA, scaleB>>
   using ALayout = AMMA::ABLayout< 128, 128>;
   using BLayout = AMMA::ABLayout< 128, 128>;
   using CLayout = AMMA::CLayout_128x128;
+
+  using Split_MNK = decltype(make_tuple(Int<4>{}, Int<1>{}, Int<1>{}));
+  using AuroraThrLayout_MNK = Layout<Shape<_4, _1, _1>>;
 
   AMMA::ScaleOut accumulate_ = AMMA::ScaleOut::One;
 };

@@ -122,6 +122,11 @@ gemm_device(ProblemShape shape_MNK, CtaTiler cta_tiler,
     
     print("---------------------\n");
   }
+
+  if(thread0()){
+    printf("==== CTA# gridDim      : (%d, %d, %d)\n", gridDim.x, gridDim.y, gridDim.z);
+    printf("==== CTA# blockDim     : (%d, %d, %d)\n", blockDim.x, blockDim.y, blockDim.z);
+  }
   
   // PREFETCH
   //

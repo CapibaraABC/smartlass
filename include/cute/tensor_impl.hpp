@@ -395,6 +395,11 @@ CUTE_HOST_DEVICE constexpr
 auto
 make_tensor(Args const&... args)
 {
+#if 0
+  if(thread0()){
+    print("\n call make_tensor in tensor_impl.hpp:399.\n");
+  }
+#endif
   static_assert((not has_dereference<Args>::value && ...), "Expected layout args... in make_tensor<T>(args...)");
   return MakeTensor<T>{}(args...);
 }

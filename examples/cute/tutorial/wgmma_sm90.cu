@@ -190,17 +190,109 @@ gemm_device(ProblemShape shape_MNK, CtaTiler cta_tiler,
   //
 
   ThrMMA thr_mma = mma.get_thread_slice(threadIdx.x);
+  //ThrMMA aurora_thr_mma = aurora_mma.get_thread_slice(threadIdx.x);
+
   Tensor tCsA = thr_mma.partition_A(sA);                               // (MMA,MMA_M,MMA_K,PIPE)
   Tensor tCsB = thr_mma.partition_B(sB);                               // (MMA,MMA_N,MMA_K,PIPE)
   Tensor tCgC = thr_mma.partition_C(gC);                               // (MMA,MMA_M,MMA_N)
+
+  //Tensor aurora_tCsA = thr_mma.aurora_partition_A_v1(sA);                               // (MMA,MMA_M,MMA_K,PIPE)
+  // Tensor aurora_tCsA_v2 = thr_mma.aurora_partition_A_v2(sA);
+  // Tensor aurora_tCsA_v3 = thr_mma.aurora_partition_A_v3(sA);
+  // Tensor aurora_tCsA_v4 = thr_mma.aurora_partition_A_v4(sA);
+  Tensor aurora_tCsA_v5 = thr_mma.aurora_partition_A_v5(sA);
+  
+  //Tensor aurora_tCsB = thr_mma.aurora_partition_B(sB);                               // (MMA,MMA_N,MMA_K,PIPE)
+  // Tensor aurora_tCsB_v3 = thr_mma.aurora_partition_B_v3(sB);
+  Tensor aurora_tCsB_v5 = thr_mma.aurora_partition_B_v5(sB);
+
+  //Tensor aurora_tCgC = thr_mma.aurora_partition_C(gC);                               // (MMA,MMA_M,MMA_N)
+  // Tensor aurora_tCgC_v3 = thr_mma.aurora_partition_C_v3(gC);
+  Tensor aurora_tCgC_v5 = thr_mma.aurora_partition_C_v5(gC);
+
+  if(thread0()){
+    //print("in thread0():\n");
+    print("gA:");print(gA);print("\n");
+    print("tCsA:");print(tCsA);print("\n");
+    // print("aurora_tCsA:");print(aurora_tCsA);print("\n");
+
+    // print("aurora_tCsA_v2:");print(aurora_tCsA_v2);print("\n");
+    // print("aurora_tCsA_v3:");print(aurora_tCsA_v3);print("\n");
+    // print("aurora_tCsA_v4:");print(aurora_tCsA_v4);print("\n");
+    print("aurora_tCsA_v5:");print(aurora_tCsA_v5);print("\n");
+    
+    print("tCsB:");print(tCsB);print("\n");
+    // print("aurora_tCsB:");print(aurora_tCsB);print("\n");
+    // print("aurora_tCsB_v3:");print(aurora_tCsB_v3);print("\n");
+    print("aurora_tCsB_v5:");print(aurora_tCsB_v5);print("\n");
+
+    print("gC:");print(gC);print("\n");
+    print("tCgC:");print(tCgC);print("\n");
+    // print("aurora_tCgC:");print(aurora_tCgC);print("\n");
+    // print("aurora_tCgC_v3:");print(aurora_tCgC_v3);print("\n");
+    print("aurora_tCgC_v5:");print(aurora_tCgC_v5);print("\n");
+
+    print("\n\n");
+  }
+
+#if 0
+  if(thread(1,0)){
+    print("in thread(1,0):\n");
+    print("tCsA:");print(tCsA);print("\n");     //the address of tCsA is same as thread0
+    // print("aurora_tCsA:");print(aurora_tCsA);print("\n");
+    print("tCsB:");print(tCsB);print("\n");
+    // print("aurora_tCsB:");print(aurora_tCsB);print("\n");
+    print("tCgC:");print(tCgC);print("\n");
+    // print("aurora_tCgC:");print(aurora_tCgC);print("\n");
+
+    print("\n\n");
+  }
+#endif
 
   // Allocate accumulators and clear them
   Tensor tCrC = thr_mma.make_fragment_C(tCgC);                         // (MMA,MMA_M,MMA_N)
   clear(tCrC);
 
+  // Tensor aurora_tCrC = thr_mma.aurora_make_fragment_C(aurora_tCgC);                         // (MMA,MMA_M,MMA_N)
+  // clear(aurora_tCrC);
+
+  // Tensor aurora_tCrC_v3 = thr_mma.aurora_make_fragment_C(aurora_tCgC_v3);
+  // clear(aurora_tCrC_v3);
+
+  Tensor aurora_tCrC_v5 = thr_mma.aurora_make_fragment_C(aurora_tCgC_v5);
+  clear(aurora_tCrC_v5);
+
   // Allocate "fragments"
   Tensor tCrA = thr_mma.make_fragment_A(tCsA);                         // (MMA,MMA_M,MMA_K,PIPE)
   Tensor tCrB = thr_mma.make_fragment_B(tCsB);                         // (MMA,MMA_N,MMA_K,PIPE)
+
+  // Tensor aurora_tCrA = thr_mma.aurora_make_fragment_A(aurora_tCsA);                         // (MMA,MMA_M,MMA_K,PIPE)
+  // Tensor aurora_tCrA_v3 = thr_mma.aurora_make_fragment_A_v3(aurora_tCsA_v3);
+  Tensor aurora_tCrA_v5 = thr_mma.aurora_make_fragment_A_v5(aurora_tCsA_v5);
+
+  // Tensor aurora_tCrB = thr_mma.aurora_make_fragment_B(aurora_tCsB);                         // (MMA,MMA_N,MMA_K,PIPE)
+  // Tensor aurora_tCrB_v3 = thr_mma.aurora_make_fragment_B_v3(aurora_tCsB_v3);
+  Tensor aurora_tCrB_v5 = thr_mma.aurora_make_fragment_B_v5(aurora_tCsB_v5);
+
+  if(thread0()){
+    print("tCrC:");print(tCrC);print("\n");
+    // print("aurora_tCrC:");print(aurora_tCrC);print("\n");
+    // print("aurora_tCrC_v3:");print(aurora_tCrC_v3);print("\n");
+    print("aurora_tCrC_v5:");print(aurora_tCrC_v5);print("\n");
+
+    print("tCsA:");print(tCsA);print("\n");
+    print("tCrA:");print(tCrA);print("\n");
+    // print("aurora_tCrA:");print(aurora_tCrA);print("\n");
+    // print("aurora_tCrA_v3:");print(aurora_tCrA_v3);print("\n");
+    print("aurora_tCrA_v5:");print(aurora_tCrA_v5);print("\n");
+
+    print("tCrB:");print(tCrB);print("\n");
+    // print("aurora_tCrB:");print(aurora_tCrB);print("\n");
+    // print("aurora_tCrB_v3:");print(aurora_tCrB_v3);print("\n");
+    print("aurora_tCrB_v5:");print(aurora_tCrB_v5);print("\n");
+
+    print("\n\n");
+  }
 
   //
   // PIPELINED MAIN LOOP
@@ -226,7 +318,14 @@ gemm_device(ProblemShape shape_MNK, CtaTiler cta_tiler,
 
     // MMAs to cover 1 K_TILE
     warpgroup_arrive();
-    gemm(mma, tCrA(_,_,_,read_pipe), tCrB(_,_,_,read_pipe), tCrC);     // (V,M) x (V,N) => (V,M,N)
+    // if(thread0()){
+    //   printf("==== MMA_CTA# gridDim      :(%d, %d, %d)\n", gridDim.x, gridDim.y, gridDim.z);
+    //   printf("==== MMA_CTA# blockDim     :(%d, %d, %d)\n", blockDim.x, blockDim.y, blockDim.z);
+    //   printf("==== MMA_CTA# blockShape   :(%d, %d, %d)\n", (int)size<0>(cta_tiler), (int)size<1>(cta_tiler), (int)size<2>(cta_tiler));
+    //   //printf("==== MMA_CTA# blockLoop    :(%d, %d) @ _[xx]_[xx]");
+    // }
+    // gemm(mma, tCrA(_,_,_,read_pipe), tCrB(_,_,_,read_pipe), tCrC);     // (V,M) x (V,N) => (V,M,N)
+    gemm(mma, aurora_tCrA_v5(_,_,_,read_pipe), aurora_tCrB_v5(_,_,_,read_pipe), aurora_tCrC_v5);     // (V,M) x (V,N) => (V,M,N)
     warpgroup_commit_batch();
 
     // Wait for all MMAs in a K_TILE to complete
@@ -282,9 +381,9 @@ gemm_nt(int m, int n, int k,
   auto dC = make_stride(Int<1>{}, ldC);                      // (dM, dN)
 
   // Define CTA tile sizes (static)
-  auto bM = Int<128>{};
-  auto bN = Int<128>{};
-  auto bK = Int< 64>{};
+  auto bM = Int<128>{};   //128
+  auto bN = Int<128>{};   //128
+  auto bK = Int< 16>{};   //128
   auto cta_tiler = make_shape(bM, bN, bK);                   // (BLK_M, BLK_N, BLK_K)
   auto bP = Int<  3>{};  // Pipeline
 
@@ -293,8 +392,17 @@ gemm_nt(int m, int n, int k,
   auto sB = tile_to_shape(AMMA::Layout_MN_SW128_Atom<TB>{}, make_shape(bN,bK,bP));
 
   // Define the MMA
-  // TiledMMA tiled_mma = make_tiled_mma(SM90_64x64x16_F16F16F16_SS<GMMA::Major::MN,GMMA::Major::MN>{});
+  // TiledMMA tiled_mma = make_tiled_mma(SM90_64x64x16_F16F16F16_SS<GMMA::Major::MN,GMMA::Major::MN>{}); 
+  //TiledMMA tiled_mma = make_tiled_mma(Aurora_64x64x16_F16F16F16_SS<AMMA::Major::MN,AMMA::Major::MN>{});
+  //TiledMMA tiled_mma = make_tiled_mma(Aurora_128x128x8_F32F32F32_SS<AMMA::Major::MN,AMMA::Major::MN>{});
+  // TiledMMA tiled_mma = make_tiled_mma(SM90_64x64x16_F16F16F16_SS<GMMA::Major::MN,GMMA::Major::MN>{}); 
+  //TiledMMA tiled_mma = make_tiled_mma(Aurora_128x128x128_F16F16F16_SS<AMMA::Major::MN,AMMA::Major::MN>{});  //aurora_mma
   TiledMMA tiled_mma = make_tiled_mma(Aurora_64x64x16_F16F16F16_SS<AMMA::Major::MN,AMMA::Major::MN>{});
+  
+
+  // using auroraMMAATOM = Aurora_64x64x16_F16F16F16_SS<AMMA::Major::MN,AMMA::Major::MN>;
+  // TiledMMA tiled_mma = make_tiled_mma(auroraMMAATOM{}, 
+  //                                     MMA_Traits<auroraMMAATOM>::AuroraThrLayout_MNK{});                                
 
   // Define the TMAs
   // Create Global memory tensors for TMA inspection
@@ -311,6 +419,7 @@ gemm_nt(int m, int n, int k,
 
   // Launch parameter setup
   int smem_size = int(sizeof(SharedStorage<TA, TB, decltype(sA), decltype(sB)>));
+  //dim3 dimBlock(size(tiled_mma));
   dim3 dimBlock(size(tiled_mma));
   dim3 dimCluster(2, 1, 1);
   dim3 dimGrid(round_up(size(ceil_div(m, bM)), dimCluster.x),
@@ -465,6 +574,7 @@ int main(int argc, char** argv)
 
 #if defined(CUTLASS_ARCH_MMA_SM90_SUPPORTED)
 
+  // int m = 256;    //512
   int m = 128;    //512
   if (argc >= 2)
     sscanf(argv[1], "%d", &m);
@@ -473,7 +583,8 @@ int main(int argc, char** argv)
   if (argc >= 3)
     sscanf(argv[2], "%d", &n);
 
-  int k = 64;   //1024
+  // int k = 16;   //1024
+  int k = 16;   //1024
   if (argc >= 4)
     sscanf(argv[3], "%d", &k);
 
@@ -489,6 +600,11 @@ int main(int argc, char** argv)
   using TB = cute::half_t;
   using TC = cute::half_t;
   using TI = cute::half_t;
+
+  // using TA = float;
+  // using TB = float;
+  // using TC = float;
+  // using TI = float;
 
   TI alpha = TI(1.0f);
   TI beta  = TI(0.0f);

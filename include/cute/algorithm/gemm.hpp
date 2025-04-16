@@ -38,6 +38,8 @@
 #include <cute/tensor_impl.hpp>
 
 #include <cute/atom/mma_atom.hpp>
+// #include "cutlass/cutlass.h"
+//#include "spdlog/spdlog.h"
 
 /** The gemm algorithm takes four (or three) tensors and computes
  *   D = A * B + C
@@ -71,6 +73,11 @@ gemm(Tensor<TA, ALayout> const& A,
      Tensor<TB, BLayout> const& B,
      Tensor<TC, CLayout>      & C)
 {
+#if 1
+  if(thread0()){
+    //print("gemm 1.\n");
+  }
+#endif
   return gemm(C, A, B, C);
 }
 
@@ -85,6 +92,18 @@ gemm(MMA_Atom<MMA>       const& mma,
      Tensor<TB, BLayout> const& B,
      Tensor<TC, CLayout>      & C)
 {
+#if 1
+  // if(thread0()){
+  //   //print("gemm 2.\n");
+  //   printf("==== MMA_CTA# gridDim      :(%d, %d, %d)\n", gridDim.x, gridDim.y, gridDim.z);
+  //   printf("==== MMA_CTA# blockDim     :(%d, %d, %d)\n", blockIdx.x, blockIdx.y, blockIdx.z);
+  //   print("A:");print(A);print("\n");
+  //   printf("Thread (%d,%d,%d) in Block (%d,%d,%d) of Grid (%d,%d,%d)\n",
+  //          threadIdx.x, threadIdx.y, threadIdx.z,
+  //          blockIdx.x, blockIdx.y, blockIdx.z,
+  //          gridDim.x, gridDim.y, gridDim.z);
+  // }
+#endif
   return gemm(mma, C, A, B, C);
 }
 
@@ -101,6 +120,11 @@ gemm(Tensor<TA, ALayout> const& A,
      Tensor<TB, BLayout> const& B,
      Tensor<TC, CLayout>     && C)
 {
+#if 1
+  if(thread0()){
+    //print("gemm 3.\n");
+  }
+#endif
   return gemm(C, A, B, C);
 }
 
@@ -115,6 +139,11 @@ gemm(Tensor<TD, DLayout>     && D,
      Tensor<TB, BLayout> const& B,
      Tensor<TC, CLayout> const& C)
 {
+#if 1
+  if(thread0()){
+    //print("gemm 4.\n");
+  }
+#endif
   return gemm(D, A, B, C);
 }
 
@@ -129,6 +158,11 @@ gemm(MMA_Atom<MMA>       const& mma,
      Tensor<TB, BLayout> const& B,
      Tensor<TC, CLayout>     && C)
 {
+#if 1
+  if(thread0()){
+    //print("gemm 5.\n");
+  }
+#endif
   return gemm(mma, C, A, B, C);
 }
 
@@ -145,6 +179,11 @@ gemm(MMA_Atom<MMA>       const& mma,
      Tensor<TB, BLayout> const& B,
      Tensor<TC, CLayout> const& C)
 {
+#if 1
+  if(thread0()){
+    //print("gemm 6.\n");
+  }
+#endif
   return gemm(mma, D, A, B, C);
 }
 
@@ -167,7 +206,11 @@ gemm(Tensor<TD, DLayout>      & D,
                                     typename Tensor<TA,ALayout>::value_type,
                                     typename Tensor<TB,BLayout>::value_type,
                                     typename Tensor<TC,CLayout>::value_type>>;
-
+#if 1
+  if(thread0()){
+    //print("gemm 7.\n");
+  }
+#endif
   return gemm(MMA{}, D, A, B, C);
 }
 
@@ -194,6 +237,11 @@ gemm(MMA_Atom<MMA>       const& mma,
      Tensor<TC, CLayout> const& C)  // (V) Logical data
 {
   // No static assertions on (V), MMA checks compatibility
+#if 1
+  if(thread0()){
+    //print("gemm 8.\n");
+  }
+#endif
   mma.call(D, A, B, C);
 }
 
@@ -218,6 +266,11 @@ gemm(MMA_Atom<MMA>       const& mma,
   CUTE_STATIC_ASSERT_V(size<0>(A) == size<0>(C));  // AM == CM
   CUTE_STATIC_ASSERT_V(size<0>(B) == size<1>(C));  // BN == CN
   CUTE_STATIC_ASSERT_V(size<0>(C) == size<0>(D) && size<1>(C) == size<1>(D));
+#if 1
+  if(thread0()){
+    //print("gemm 9.\n");
+  }
+#endif
   gemm(mma,
        D,                                                       // (M,N)
        make_tensor(A.data(), append<2>(A.layout())),            // (M,1)
@@ -252,6 +305,11 @@ gemm(MMA_Atom<MMA>       const& mma,
   CUTE_STATIC_ASSERT_V(size<1>(typename MMA_Atom<MMA>::LayoutC_TV{}) == Int<1>{});
   CUTE_STATIC_ASSERT_V(size<1>(typename MMA_Atom<MMA>::LayoutA_TV{}) == Int<1>{});
   CUTE_STATIC_ASSERT_V(size<1>(typename MMA_Atom<MMA>::LayoutB_TV{}) == Int<1>{});
+#if 1
+  if(thread0()){
+    //print("gemm 10.\n");
+  }
+#endif
 
   gemm(mma,
        make_tensor(D.data(), prepend<3>(D.layout())),      // (1,M,N)
@@ -283,6 +341,11 @@ gemm(MMA_Atom<MMA>       const& mma,
   CUTE_STATIC_ASSERT_V(size<0>(C) == size<0>(D) && size<1>(C) == size<1>(D) && size<2>(C) == size<2>(D));
   auto M = size<1>(A);
   auto N = size<1>(B);
+#if 1
+  if(thread0()){
+    //print("gemm 11.\n");
+  }
+#endif
   // REGISTER .reuse OPTIMIZATIONS
   // 64-bit traversal specialization -- serpentine path
   if constexpr (decltype(size<0>(A))::value * sizeof(typename TA::value_type) == 8 &&
@@ -296,6 +359,19 @@ gemm(MMA_Atom<MMA>       const& mma,
       for (int n = 0; n < N; ++n) {
         int ns = (m & 1) ? N-1-n : n;  // Serpentine coordinate
         gemm(mma, D(_,m,ns), A(_,m), B(_,ns), C(_,m,ns));
+        if(thread0()&&blockIdx.x == 0 && blockIdx.y == 0){
+          using ShapeMNK = typename MMA_Atom<MMA>::Shape_MNK; 
+          ShapeMNK shape; 
+          uint32_t msize = size<0>(shape);
+          uint32_t nsize = size<1>(shape);
+          uint32_t ksize = size<2>(shape);
+          int loopidx = m * (int)N + n;
+          int loop_num = (int)M * (int)N;
+          // printf("==== MMA_CTA# blockLoop    :%d @ _[%d]\n", loop_num, loopidx);
+          // printf("==== MMA_CTA# Gmem C.coord :(%d, %d), Gmem C.shape:(%u, %u, %u)\n", (int)(m), (int)(ns), msize, nsize, ksize );
+          // printf("MMA_Atom.Shape_MNK:%u, %u, %u (smartlass/include/cute/algorithm/gemm.hpp:305)\n", msize, nsize, ksize);
+          // printf("Calculate block C.coord:(%d,%d) (smartlass/include/cute/algorithm/gemm.hpp:306)\n", (int)(m), (int)(ns));
+        }
       }
     }
 #else
@@ -408,7 +484,11 @@ gemm(MMA_Atom<MMA>       const& mma,
   CUTE_STATIC_ASSERT_V(size<2>(A) == size<2>(B));  // AK == BK
   CUTE_STATIC_ASSERT_V(size<0>(C) == size<0>(D) && size<1>(C) == size<1>(D) && size<2>(C) == size<2>(D));
   auto K = size<2>(A);
-
+#if 1
+  if(thread0()){
+    //print("gemm 12.\n");
+  }
+#endif
   CUTE_UNROLL
   for (int k = 0; k < K; ++k) {
     gemm(mma, D, A(_,_,k), B(_,_,k), C);
@@ -451,7 +531,11 @@ gemm(MMA_Atom<MMA>       const& mma,
   CUTE_STATIC_ASSERT_V(size<1>(typename MMA_Atom<MMA>::LayoutC_TV{}) == Int<1>{});
   CUTE_STATIC_ASSERT_V(size<1>(typename MMA_Atom<MMA>::LayoutA_TV{}) == Int<1>{});
   CUTE_STATIC_ASSERT_V(size<1>(typename MMA_Atom<MMA>::LayoutB_TV{}) == Int<1>{});
-
+#if 1
+  if(thread0()){
+    //print("gemm 13.\n");
+  }
+#endif
   gemm(mma,
        make_tensor(D.data(), prepend<3>(D.layout())),      // (1,M,N)
        make_tensor(A.data(), prepend<3>(A.layout())),      // (1,M,K)
@@ -486,7 +570,11 @@ gemm(MMA_Atom<MMA>       const& mma,
   auto rB = MMA_Atom<MMA>::make_fragment_B(B);
 
   auto K = size<2>(A);
-
+#if 1
+  if(thread0()){
+    //print("gemm 14.\n");
+  }
+#endif
   CUTE_UNROLL
   for (int k = 0; k < K; ++k)
   {

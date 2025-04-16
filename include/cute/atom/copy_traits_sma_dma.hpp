@@ -744,7 +744,16 @@ make_dma_copy_desc(Tensor<GEngine,GLayout> const& gtensor,         // The origin
 #if 0
     print("gmem_tma_basis_stride : "); print(gmem_tma_basis_stride); print("\n");
 #endif
-
+  // print("\n\n====================make_dma_copy_desc=====================\n");
+  // print("gtensor : "); print(gtensor); print("\n");
+  // print("tma_gbasis : "); print(dma_gbasis); print("\n");
+  // print("gmem_prob_shape : "); print(gmem_prob_shape); print("\n");
+  // print("gmem_prob_stride : "); print(gmem_prob_stride); print("\n");
+  // print("smem_box_shape : "); print(smem_box_shape); print("\n");
+  // print("smem_box_stride : "); print(smem_box_stride); print("\n");
+  // print("gbasis : "); print(gbasis); print("\n");
+  // print("gmem_tma_basis_stride : "); print(gmem_dma_basis_stride); print("\n");
+  // print("=========================================\n");
   using AuxParams = AuxDmaParams<decltype(gmem_dma_basis_stride),
                                  decltype(dma_gbasis),
                                  decltype(swizzle)>;
@@ -800,7 +809,14 @@ make_dma_copy_atom(CopyOp,
   print("num_bits_per_tma :  "); print(num_bits_per_tma); print("\n");
   print("g_stride_bases   :  "); print(tma_traits.aux_params_.g_stride_); print("\n");
 #endif
-
+  // print("\n\n====================make_dma_copy_atom=====================\n");
+  // print("gtensor :  "); print(gtensor); print("\n");
+  // print("slayout :  "); print(slayout); print("\n");
+  // print("cta_v_map :  "); print(cta_v_map); print("\n");
+  // print("smem_layout :  "); print(smem_layout); print("\n");
+  // print("smem_swizzle   :  "); print(smem_swizzle); print("\n");
+  // print("dma_gbasis :  "); print(dma_gbasis); print("\n");
+  // print("=========================================\n");
   // Return the Copy_Atom
   return Atom{dma_traits};
 }
@@ -855,7 +871,14 @@ make_dma_copy_tiled(CopyOp                  const& copy_op,
   print("layout_T : "); print(layout_T); print("\n");
   print("layout_TV : "); print(layout_TV); print("\n");
 #endif
-
+  // print("\n\n====================make_dma_copy_tiled=====================\n");
+  // print("cta_tiler : "); print(cta_tiler); print("\n");
+  // print("layout_v : "); print(layout_v); print("\n");
+  // print("layout_V : "); print(layout_V); print("\n");
+  // print("layout_t : "); print(layout_t); print("\n");
+  // print("layout_T : "); print(layout_T); print("\n");
+  // print("layout_TV : "); print(layout_TV); print("\n");
+  // print("=========================================\n");
   return TiledCopy<decltype(atom), decltype(layout_TV), decltype(cta_tiler)>{atom};
 }
 
@@ -1147,16 +1170,16 @@ make_dma_copy_A_sma(CopyOp                  const& copy_op,
   // mcast along N mode for this M load, if any
   auto cluster_size_n = size<1>(cluster_size);
 
-  // if constexpr (cute::is_same_v<CopyOp, SM90_TMA_LOAD_IM2COL>) {
-  //   return make_im2col_tma_copy(copy_op,
-  //                               gtensor,
-  //                               slayout,
-  //                               cta_tiler_mk,
-  //                               cluster_size_n);
-  // } else {
-    auto cta_v_tile = make_identity_layout(shape(gtensor)).compose(cta_tiler_mk);
-    auto cta_t_tile = make_layout(cluster_size_n);
-
+  auto cta_v_tile = make_identity_layout(shape(gtensor)).compose(cta_tiler_mk);
+  auto cta_t_tile = make_layout(cluster_size_n);
+  // print("\n\n====================make_dma_copy_A_sma=====================\n");
+  // print("gtensor  : "); print(gtensor); print("\n");
+  // print("slayout  : "); print(slayout); print("\n");
+  // print("cta_tiler  : "); print(cta_tiler); print("\n");
+  // print("cta_v_tile  : "); print(cta_v_tile); print("\n");
+  // print("cta_t_tile  : "); print(cta_t_tile); print("\n");
+  // print("cta_tiler  : "); print(cta_tiler); print("\n");
+  // print("=========================================\n");
     // Prefer TmaInternalType if specified. Fallback to GEngine::value_type
     using DmaType = conditional_t<is_same<void, DmaInternalType>::value, typename GEngine::value_type, DmaInternalType>;
     auto dma_copy = detail::make_dma_copy_tiled<DmaType>(copy_op, gtensor, slayout, cta_t_tile, cta_v_tile);

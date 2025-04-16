@@ -205,14 +205,39 @@ copy(Copy_Atom<CopyArgs...>       const& copy_atom,
       CUTE_STATIC_ASSERT_V(size<1>(src_c) == size<1>(dst_c));
       CUTE_STATIC_ASSERT_V(shape<0>(dst_c) == shape<0>(dst));
       CUTE_STATIC_ASSERT_V(shape<0>(src_c) == shape<0>(src));
-      if (thread0()) {
-        print("copy shape  : "); print(shape<0>(src_c));print("    copy epoch  : "); print(shape<1>(src_c)); print("\n");
+      bool whether_print = false;
+      {
+        if (rank<0,0>(src_c) == 1)
+        {
+          whether_print = true;
+        }
+        else if (rank<0,0,0>(src_c) == 1)
+        {
+          if (size<0,0>(src_c) == size<0>(src_c))
+            whether_print = true;
+        }
+      }
+      if (thread0() && whether_print) {
+        if (rank<0,0>(src_c) == 1)
+        {
+          print("copy shape  : "); print(shape<0>(src_c));print("    copy atom tiling shape  : "); print(shape<1>(src_c)); print("\n");
+        }
+        else
+        {
+          print("copy shape  : "); print(shape<0,0>(src_c));print("    copy atom tiling shape  : "); print(shape<1>(src_c)); print("\n");
+        }
+        // print("src_c  : "); print(src_c); print("\n");
+        // print("src  : "); print(src); print("\n");
+        // print("dst  : "); print(dst); print("\n");
       }
       CUTE_UNROLL
       for (int i = 0; i < size<1>(dst_c); ++i) {
+        if (thread0() && whether_print) {
+          printf("epoch %4d     ",i);
+        }
         copy_atom.call(src_c(_,i), dst_c(_,i));
       }
-      if (thread0()) {
+      if (thread0() && whether_print) {
         print("---------------------\n");
       }
       

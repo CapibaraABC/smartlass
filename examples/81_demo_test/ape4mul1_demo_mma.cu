@@ -103,7 +103,6 @@ gemm_device(ProblemShape shape_MNK, CtaTiler cta_tiler,
 
   auto cta_dma_a = dma_a.get_slice(blockIdx.x);
   auto cta_dma_b = dma_b.get_slice(blockIdx.y);
-
   Tensor tAgA = cta_dma_a.partition_S(gA);                      // (TMA,TMA_M,TMA_K,k)
   Tensor tAsA = cta_dma_a.partition_D(sA);
   Tensor tBgB = cta_dma_b.partition_S(gB);                                                   // (TMA,TMA_N,TMA_K,k)
@@ -113,22 +112,24 @@ gemm_device(ProblemShape shape_MNK, CtaTiler cta_tiler,
   // The TMA is responsible for copying everything in mode-0 of tAsA and tBsB
   constexpr int kDmaTransactionBytes = CUTE_STATIC_V(size<0>(tAsA)) * sizeof(TA) +
                                        CUTE_STATIC_V(size<0>(tBsB)) * sizeof(TB);
-  // if (thread0()) {
-  //   print("tAgA  : "); print(tAgA); print("\n");
-  //   print("tAsA  : "); print(tAsA); print("\n");
-  //   print("gA  : "); print(gA); print("\n");
-  //   print("sA  : "); print(sA); print("\n");
-  //   // print("tCrC  : "); print(tCrC); print("\n");
+  if (thread0()) {
+    print("mA  : "); print(mA); print("\n");
+    print("tAgA  : "); print(tAgA); print("\n");
+    print("tAsA  : "); print(tAsA); print("\n");
+    print("gA  : "); print(gA); print("\n");
+    print("sA  : "); print(sA); print("\n");
+    // print("tCrC  : "); print(tCrC); print("\n");
     
-  //   print("---------------------\n");
-  // }
-  //
-  // PREFETCH
-  //
+    print("---------------------\n");
+  }
+
   if(thread0()){
     printf("==== CTA# gridDim      : (%d, %d, %d)\n", gridDim.x, gridDim.y, gridDim.z);
     printf("==== CTA# blockDim     : (%d, %d, %d)\n", blockDim.x, blockDim.y, blockDim.z);
-  }  
+  }
+  
+  // PREFETCH
+  //
 
   auto K_PIPE_MAX = size<3>(tAsA);
 
@@ -152,6 +153,16 @@ gemm_device(ProblemShape shape_MNK, CtaTiler cta_tiler,
 
   // Start async loads for all pipes
   int prologue_iterations = min(K_PIPE_MAX, k_tile_count);
+
+  // if (thread0()) {
+  //   print("sA  : "); print(sA); print("\n");
+  //   print("tCsA  : "); print(tCsA); print("\n");
+  //   print("tCrA  : "); print(tCrA); print("\n");
+  //   print("tCgC  : "); print(tCgC); print("\n");
+  //   print("tCrC  : "); print(tCrC); print("\n");
+    
+  //   print("---------------------\n");
+  // }
   CUTE_UNROLL
   for (int pipe = 0; pipe < prologue_iterations; ++pipe)
   {
@@ -160,15 +171,7 @@ gemm_device(ProblemShape shape_MNK, CtaTiler cta_tiler,
       // Set expected Tx Bytes after each reset / init
       mainloop_pipeline.producer_acquire(mainloop_pipe_producer_state);
       BarrierType* tma_barrier = mainloop_pipeline.producer_get_barrier(mainloop_pipe_producer_state);
-      if(thread0())
-      {
-        printf("================================\nA matrix loading, loading shape is:");print(shape(tAgA(_,_,0,pipe)));print("\n");
-      }
       copy(dma_a.with(* tma_barrier), tAgA(_,_,_,pipe), tAsA(_,_,_,pipe));
-      if(thread0())
-      {
-        printf("================================\nB matrix loading, loading shape is:");print(shape(tBgB(_,_,0,pipe)));print("\n");
-      }
       copy(dma_b.with(* tma_barrier), tBgB(_,_,_,pipe), tBsB(_,_,_,pipe));
       ++mainloop_pipe_producer_state;
     }
@@ -191,22 +194,43 @@ gemm_device(ProblemShape shape_MNK, CtaTiler cta_tiler,
   Tensor tCsB = thr_mma.partition_B(sB);                               // (MMA,MMA_N,MMA_K,PIPE)
   Tensor tCgC = thr_mma.partition_C(gC);                               // (MMA,MMA_M,MMA_N)
 
+  Tensor aurora_tCsA = thr_mma.aurora_partition_A(sA);
+  Tensor aurora_tCsB = thr_mma.aurora_partition_B(sB);
+  Tensor aurora_tCgC = thr_mma.aurora_partition_C(gC);
+
   // Allocate accumulators and clear them
   Tensor tCrC = thr_mma.make_fragment_C(tCgC);                         // (MMA,MMA_M,MMA_N)
   clear(tCrC);
 
-  // Allocate "fragments"
+  // // Allocate "fragments"
   Tensor tCrA = thr_mma.make_fragment_A(tCsA);                         // (MMA,MMA_M,MMA_K,PIPE)
   Tensor tCrB = thr_mma.make_fragment_B(tCsB);                         // (MMA,MMA_N,MMA_K,PIPE)
-  // if (thread0()) {
-  //   print("sA  : "); print(sA); print("\n");
-  //   print("tCsA  : "); print(tCsA); print("\n");
-  //   print("tCrA  : "); print(tCrA); print("\n");
-  //   print("tCgC  : "); print(tCgC); print("\n");
-  //   print("tCrC  : "); print(tCrC); print("\n");
+
+  Tensor aurora_tCrC = thr_mma.aurora_make_fragment_C(aurora_tCgC);                         // (MMA,MMA_M,MMA_N)
+  clear(aurora_tCrC);
+  Tensor aurora_tCrA = thr_mma.aurora_make_fragment_A(aurora_tCsA);                         // (MMA,MMA_M,MMA_K,PIPE)
+  Tensor aurora_tCrB = thr_mma.aurora_make_fragment_B(aurora_tCsB);
+
+  int tid = threadIdx.x + blockIdx.x * blockDim.x;
+  if (thread0()) {
+    printf("threadIdx.x:%d, tid:%d\n", threadIdx.x, tid);
+    print("tCsA  : "); print(tCsA); print("\n");
+    print("tCsB  : "); print(tCsB); print("\n");
+    print("tCgC  : "); print(tCgC); print("\n");
+    print("tCrA  : "); print(tCrA); print("\n");
+    print("tCrB  : "); print(tCrB); print("\n");
+    print("tCrC  : "); print(tCrC); print("\n");
+
+    print("aurora_tCsA  : "); print(aurora_tCsA); print("\n");
+    print("aurora_tCsB  : "); print(aurora_tCsB); print("\n");
+    print("aurora_tCgC  : "); print(aurora_tCgC); print("\n");
+    print("aurora_tCrA  : "); print(aurora_tCrA); print("\n");
+    print("aurora_tCrB  : "); print(aurora_tCrB); print("\n");
+    print("aurora_tCrC  : "); print(aurora_tCrC); print("\n");
     
-  //   print("---------------------\n");
-  // }
+    print("---------------------\n");
+  }
+
   //
   // PIPELINED MAIN LOOP
   //
@@ -236,7 +260,8 @@ gemm_device(ProblemShape shape_MNK, CtaTiler cta_tiler,
     
     // MMAs to cover 1 K_TILE
     warpgroup_arrive();
-    gemm(mma, tCrA(_,_,_,read_pipe), tCrB(_,_,_,read_pipe), tCrC);     // (V,M) x (V,N) => (V,M,N)
+    // gemm(mma, tCrA(_,_,_,read_pipe), tCrB(_,_,_,read_pipe), tCrC);     // (V,M) x (V,N) => (V,M,N)
+    gemm(mma, aurora_tCrA(_,_,_,read_pipe), aurora_tCrB(_,_,_,read_pipe), aurora_tCrC);
     warpgroup_commit_batch();
 
     // Wait for all MMAs in a K_TILE to complete
@@ -261,7 +286,6 @@ gemm_device(ProblemShape shape_MNK, CtaTiler cta_tiler,
       {
         printf("================================\nB matrix loading, loading shape is:");print(shape(tBgB(_,_,0,pipe)));print("\n");
       }
-
       copy(dma_b.with(* tma_barrier), tBgB(_,_,_,k_tile), tBsB(_,_,_,pipe));
       ++mainloop_pipe_producer_state;
       --k_tile_count;
@@ -303,20 +327,31 @@ gemm_nt(int m, int n, int k,
   auto dC = make_stride(Int<1>{}, ldC);                      // (dM, dN)
 
   // Define CTA tile sizes (static)
-  auto bM = Int<128>{};
-  auto bN = Int<128>{};
-  auto bK = Int< 64>{};
-  auto cta_tiler = make_shape(bM, bN, bK);                   // (BLK_M, BLK_N, BLK_K)
+  // auto bM = Int<128>{};
+  // auto bN = Int<128>{};
+  // auto bK = Int<128>{};
 
+  auto bM = Int<256>{};
+  auto bN = Int<64>{};
+  auto bK = Int<16>{};
+  auto cta_tiler = make_shape(bM, bN, bK);                   // (BLK_M, BLK_N, BLK_K)
   auto bP = Int<  2>{};  // Pipeline
 
   // Define the smem layouts (static)
-  auto sA = tile_to_shape(AMMA::Layout_MN_SW128_Atom<TA>{}, make_shape(bM,bK,bP));
-  auto sB = tile_to_shape(AMMA::Layout_MN_SW128_Atom<TA>{}, make_shape(bM,bK,bP));
-  // print("sA  : "); print(sA); print("\n");
-
+  auto sA = exchange_shape(AMMA::Layout_MN_SW128_Atom<TA>{}, make_shape(bM,bK,bP));
+  auto sB = exchange_shape(AMMA::Layout_MN_SW128_Atom<TB>{}, make_shape(bN,bK,bP));
+  print("sA  : "); print(sA); print("\n");
   // Define the MMA
-  TiledMMA tiled_mma = make_tiled_mma(Aurora_64x64x16_F16F16F16_SS<AMMA::Major::MN,AMMA::Major::MN>{});
+  // TiledMMA tiled_mma = make_tiled_mma(Aurora_128x128x128_F16F16F16_SS<AMMA::Major::MN,AMMA::Major::MN>{});
+
+  //define the layout for ape 4*1
+  //way1: use this way to define 4*1 threads
+  using auroraMMAATOM = Aurora_64x64x16_F16F16F16_SS<AMMA::Major::MN,AMMA::Major::MN>;
+  TiledMMA tiled_mma = make_tiled_mma(auroraMMAATOM{}, 
+                                      MMA_Traits<auroraMMAATOM>::AuroraThrLayout_MNK{}); 
+
+  //way2: only 1 threads. we split A to 4*1, B to 1*1, C to 4*1, and each thread hold only 1 mma_atom                                    
+  // TiledMMA tiled_mma = make_tiled_mma(Aurora_64x64x16_F16F16F16_SS<AMMA::Major::MN,AMMA::Major::MN>{});                                   
 
   // Define the TMAs
   // Create Global memory tensors for TMA inspection
@@ -333,7 +368,8 @@ gemm_nt(int m, int n, int k,
   // Launch parameter setup
   int smem_size = int(sizeof(SharedStorage<TA, TB, decltype(sA), decltype(sB)>));
   dim3 dimBlock(size(tiled_mma));
-//   print("dimBlock  : "); print(dimBlock); print("\n");
+  // dim3 dimBlock(1, 4, 1);
+  // print("dimBlock  : "); print(dimBlock); print("\n");
   dim3 dimCluster(1, 1, 1);
   dim3 dimGrid(round_up(size(ceil_div(m, bM)), dimCluster.x),
                round_up(size(ceil_div(n, bN)), dimCluster.y));
@@ -369,9 +405,13 @@ gemm_nt(int m, int n, int k,
 
 int main(int argc, char** argv)
 {
-    int m = 512;
-    int n = 512;
-    int k = 128;
+    // int m = 256;
+    // int n = 256;
+    // int k = 128;
+
+    int m = 256;
+    int n = 64;
+    int k = 16;
     using TA = cute::half_t;
     using TB = cute::half_t;
     using TC = cute::half_t;

@@ -33,3 +33,18 @@ cutlass_example_add_executable(
   demo1
   demo1.cu
   )
+cutlass_example_add_executable(
+  ape_demo
+  ape_demo.cu
+  )
+
+cutlass_example_add_executable(
+  ape4mul1_demo_mma
+  ape4mul1_demo_mma.cu
+  )
+
+# cutlass_example_add_executable(
+#   tmp_comp
+#   tmp_comp.cu
+#   )
+

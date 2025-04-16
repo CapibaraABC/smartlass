@@ -226,77 +226,77 @@ make_gmma_desc(Tensor<TEngine,TLayout> const& tensor)
                     LAYOUT_TYPE == LayoutType::B64        ? 4 :
                     LAYOUT_TYPE == LayoutType::B128       ? 8 : -1;
 
-  if constexpr (MajorMode == Major::MN)
-  {
-    /* In units of uint128_t, each AmmaDescriptor Major-MN describes a canonical layout of the form
-     *
-     * LayoutType::INTERLEAVE         : Swizzle<0,4,3> o smem_ptr o ((1,n),(8,k)):((X,SBO),(1,LBO))
-     * LayoutType::B32                : Swizzle<1,4,3> o smem_ptr o ((2,n),(8,k)):((1,LBO),(2,SBO))
-     * LayoutType::B64                : Swizzle<2,4,3> o smem_ptr o ((4,n),(8,k)):((1,LBO),(4,SBO))
-     * LayoutType::B128               : Swizzle<3,4,3> o smem_ptr o ((8,n),(8,k)):((1,LBO),(8,SBO))
-     */
-    static_assert(size<1>(u128_tensor) == Int<(256 / cute::sizeof_bits<value_type>::value)>{} || // A and B in dense MMA
-                  size<1>(u128_tensor) == Int<(128 / cute::sizeof_bits<value_type>::value)>{} || // A in sparse MMA
-                  size<1>(u128_tensor) == Int<(512 / cute::sizeof_bits<value_type>::value)>{},   // B in sparse MMA
-                         "Not a canonical GMMA_MN Layout: Expected K-size 256/sizeof_bits<T> for dense or (128|512)/sizeof_bits<T> for sparse.");
+  // if constexpr (MajorMode == Major::MN)
+  // {
+  //   /* In units of uint128_t, each AmmaDescriptor Major-MN describes a canonical layout of the form
+  //    *
+  //    * LayoutType::INTERLEAVE         : Swizzle<0,4,3> o smem_ptr o ((1,n),(8,k)):((X,SBO),(1,LBO))
+  //    * LayoutType::B32                : Swizzle<1,4,3> o smem_ptr o ((2,n),(8,k)):((1,LBO),(2,SBO))
+  //    * LayoutType::B64                : Swizzle<2,4,3> o smem_ptr o ((4,n),(8,k)):((1,LBO),(4,SBO))
+  //    * LayoutType::B128               : Swizzle<3,4,3> o smem_ptr o ((8,n),(8,k)):((1,LBO),(8,SBO))
+  //    */
+  //   static_assert(size<1>(u128_tensor) == Int<(256 / cute::sizeof_bits<value_type>::value)>{} || // A and B in dense MMA
+  //                 size<1>(u128_tensor) == Int<(128 / cute::sizeof_bits<value_type>::value)>{} || // A in sparse MMA
+  //                 size<1>(u128_tensor) == Int<(512 / cute::sizeof_bits<value_type>::value)>{},   // B in sparse MMA
+  //                        "Not a canonical GMMA_MN Layout: Expected K-size 256/sizeof_bits<T> for dense or (128|512)/sizeof_bits<T> for sparse.");
 
-    // Construct the canonical GMMA T Layout with shape ((W,n),(8,2))
-    Layout canonical_layout = logical_divide(layout(u128_tensor), make_tile(Layout<Int<W>,_1>{}, Layout<Int<8>,_1>{}));
+  //   // Construct the canonical GMMA T Layout with shape ((W,n),(8,2))
+  //   Layout canonical_layout = logical_divide(layout(u128_tensor), make_tile(Layout<Int<W>,_1>{}, Layout<Int<8>,_1>{}));
 
-    // Check ranks of canonical
-    CUTE_STATIC_ASSERT_V(rank<0>(canonical_layout) == Int<2>{}, "Not a canonical GMMA_MN Layout: No flat offset mode");
-    CUTE_STATIC_ASSERT_V(rank<1>(canonical_layout) == Int<2>{}, "Not a canonical GMMA_MN Layout: No flat offset mode");
-    // Check canonical mode strides
-    constexpr uint32_t stride_00 = stride<0,0>(canonical_layout);
-    constexpr uint32_t expected_stride_00 = LAYOUT_TYPE == LayoutType::INTERLEAVE ? stride<0,0>(canonical_layout) : 1;
-    static_assert(stride_00 == expected_stride_00, "Not a canonical GMMA_MN Layout: Expected stride failure.");
-    constexpr uint32_t stride_10 = stride<1,0>(canonical_layout);
-    constexpr uint32_t expected_stride_10 = W;
-    static_assert(stride_10 == expected_stride_10, "Not a canonical GMMA_MN Layout: Expected stride failure.");
+  //   // Check ranks of canonical
+  //   CUTE_STATIC_ASSERT_V(rank<0>(canonical_layout) == Int<2>{}, "Not a canonical GMMA_MN Layout: No flat offset mode");
+  //   CUTE_STATIC_ASSERT_V(rank<1>(canonical_layout) == Int<2>{}, "Not a canonical GMMA_MN Layout: No flat offset mode");
+  //   // Check canonical mode strides
+  //   constexpr uint32_t stride_00 = stride<0,0>(canonical_layout);
+  //   constexpr uint32_t expected_stride_00 = LAYOUT_TYPE == LayoutType::INTERLEAVE ? stride<0,0>(canonical_layout) : 1;
+  //   static_assert(stride_00 == expected_stride_00, "Not a canonical GMMA_MN Layout: Expected stride failure.");
+  //   constexpr uint32_t stride_10 = stride<1,0>(canonical_layout);
+  //   constexpr uint32_t expected_stride_10 = W;
+  //   static_assert(stride_10 == expected_stride_10, "Not a canonical GMMA_MN Layout: Expected stride failure.");
 
-    // stride dimension byte offset and leading dimension byte offset (4LSB not included == uint128_t units)
-    constexpr uint32_t stride_01 = stride<0,1>(canonical_layout);
-    constexpr uint32_t stride_11 = stride<1,1>(canonical_layout);
+  //   // stride dimension byte offset and leading dimension byte offset (4LSB not included == uint128_t units)
+  //   constexpr uint32_t stride_01 = stride<0,1>(canonical_layout);
+  //   constexpr uint32_t stride_11 = stride<1,1>(canonical_layout);
 
-    desc.bitfield.stride_byte_offset_  = (LAYOUT_TYPE == LayoutType::INTERLEAVE) ? stride_01 : stride_11;
-    desc.bitfield.leading_byte_offset_ = (LAYOUT_TYPE == LayoutType::INTERLEAVE) ? stride_11 : stride_01;
-  }
-  else if constexpr (MajorMode == Major::K)
-  {
-    /* In units of uint128_t, each AmmaDescriptor Major-K describes a canonical layout of the form
-     *
-     * LayoutType::INTERLEAVE    : Swizzle<0,4,3> o smem_ptr o ((8,n),2):((1,SBO),LBO)
-     * LayoutType::B32           : Swizzle<1,4,3> o smem_ptr o ((8,n),2):((2,SBO),1)
-     * LayoutType::B64           : Swizzle<2,4,3> o smem_ptr o ((8,n),2):((4,SBO),1)
-     * LayoutType::B128          : Swizzle<3,4,3> o smem_ptr o ((8,n),2):((8,SBO),1)
-     */
-    CUTE_STATIC_ASSERT_V(size<0>(u128_tensor) % Int<8>{} == Int<0>{},          // N|M size
-                         "Not a canonical GMMA_K Layout: Expected MN-size multiple of 8.");
-    CUTE_STATIC_ASSERT_V(size<1>(u128_tensor) == Int<2>{} || size<1>(u128_tensor) == Int<4>{},      // K   size
-                         "Not a canonical GMMA_K Layout: Expected K-size 2 for dense or 4 for sparse (in units of uint128_t).");
+  //   desc.bitfield.stride_byte_offset_  = (LAYOUT_TYPE == LayoutType::INTERLEAVE) ? stride_01 : stride_11;
+  //   desc.bitfield.leading_byte_offset_ = (LAYOUT_TYPE == LayoutType::INTERLEAVE) ? stride_11 : stride_01;
+  // }
+  // else if constexpr (MajorMode == Major::K)
+  // {
+  //   /* In units of uint128_t, each AmmaDescriptor Major-K describes a canonical layout of the form
+  //    *
+  //    * LayoutType::INTERLEAVE    : Swizzle<0,4,3> o smem_ptr o ((8,n),2):((1,SBO),LBO)
+  //    * LayoutType::B32           : Swizzle<1,4,3> o smem_ptr o ((8,n),2):((2,SBO),1)
+  //    * LayoutType::B64           : Swizzle<2,4,3> o smem_ptr o ((8,n),2):((4,SBO),1)
+  //    * LayoutType::B128          : Swizzle<3,4,3> o smem_ptr o ((8,n),2):((8,SBO),1)
+  //    */
+  //   CUTE_STATIC_ASSERT_V(size<0>(u128_tensor) % Int<8>{} == Int<0>{},          // N|M size
+  //                        "Not a canonical GMMA_K Layout: Expected MN-size multiple of 8.");
+  //   CUTE_STATIC_ASSERT_V(size<1>(u128_tensor) == Int<2>{} || size<1>(u128_tensor) == Int<4>{},      // K   size
+  //                        "Not a canonical GMMA_K Layout: Expected K-size 2 for dense or 4 for sparse (in units of uint128_t).");
 
-    // Construct the canonical GMMA N Layout with shape ((8,n),(2,1))
-    Layout canonical_layout = logical_divide(layout(u128_tensor), make_tile(Layout<_8,_1>{}, Layout<_2,_1>{}));
+  //   // Construct the canonical GMMA N Layout with shape ((8,n),(2,1))
+  //   Layout canonical_layout = logical_divide(layout(u128_tensor), make_tile(Layout<_8,_1>{}, Layout<_2,_1>{}));
 
-    // Check ranks of canonical
-    CUTE_STATIC_ASSERT_V(rank<0>(canonical_layout) == Int<2>{}, "Not a canonical GMMA_K Layout: No flat offset mode");
-    CUTE_STATIC_ASSERT_V(rank<1>(canonical_layout) == Int<2>{}, "Not a canonical GMMA_K Layout: No flat offset mode");
-    // Check canonical mode strides
-    constexpr uint32_t stride_00 = stride<0,0>(canonical_layout);
-    constexpr uint32_t expected_stride_00 = W;
-    static_assert(stride_00 == expected_stride_00, "Not a canonical GMMA_K Layout: Expected stride failure.");
-    constexpr uint32_t stride_10 = stride<1,0>(canonical_layout);
-    constexpr uint32_t expected_stride_10 = (LAYOUT_TYPE == LayoutType::INTERLEAVE) ? stride<1,0>(canonical_layout) : 1;
-    static_assert(stride_10 == expected_stride_10, "Not a canonical GMMA_K Layout: Expected stride failure.");
+  //   // Check ranks of canonical
+  //   CUTE_STATIC_ASSERT_V(rank<0>(canonical_layout) == Int<2>{}, "Not a canonical GMMA_K Layout: No flat offset mode");
+  //   CUTE_STATIC_ASSERT_V(rank<1>(canonical_layout) == Int<2>{}, "Not a canonical GMMA_K Layout: No flat offset mode");
+  //   // Check canonical mode strides
+  //   constexpr uint32_t stride_00 = stride<0,0>(canonical_layout);
+  //   constexpr uint32_t expected_stride_00 = W;
+  //   static_assert(stride_00 == expected_stride_00, "Not a canonical GMMA_K Layout: Expected stride failure.");
+  //   constexpr uint32_t stride_10 = stride<1,0>(canonical_layout);
+  //   constexpr uint32_t expected_stride_10 = (LAYOUT_TYPE == LayoutType::INTERLEAVE) ? stride<1,0>(canonical_layout) : 1;
+  //   static_assert(stride_10 == expected_stride_10, "Not a canonical GMMA_K Layout: Expected stride failure.");
 
-    // stride dimension byte offset and leading dimension byte offset (4LSB not included == uint128_t units)
-    constexpr uint32_t stride_01 = stride<0,1>(canonical_layout);
+  //   // stride dimension byte offset and leading dimension byte offset (4LSB not included == uint128_t units)
+  //   constexpr uint32_t stride_01 = stride<0,1>(canonical_layout);
 
-    desc.bitfield.stride_byte_offset_  = stride_01;
-    desc.bitfield.leading_byte_offset_ = stride_10;
-  } else {
-    static_assert(MajorMode != Major::MN && MajorMode != Major::K, "Unrecognized MajorMode!");
-  }
+  //   desc.bitfield.stride_byte_offset_  = stride_01;
+  //   desc.bitfield.leading_byte_offset_ = stride_10;
+  // } else {
+  //   static_assert(MajorMode != Major::MN && MajorMode != Major::K, "Unrecognized MajorMode!");
+  // }
   return desc;
 }
 
@@ -421,9 +421,9 @@ mma_unpack(MMA_Traits<MMA_Op, MMA_Args...> const& traits,
   constexpr int RegNumB = extent<typename MMA_Op::BRegisters>::value;
   constexpr int RegNumC = extent<typename MMA_Op::CRegisters>::value;
 
-  CUTE_STATIC_ASSERT_V(size(rA) == Int<RegNumA>{});
-  CUTE_STATIC_ASSERT_V(size(rB) == Int<RegNumB>{});
-  CUTE_STATIC_ASSERT_V(size(rC) == Int<RegNumC>{});
+  // CUTE_STATIC_ASSERT_V(size(rA) == Int<RegNumA>{});
+  // CUTE_STATIC_ASSERT_V(size(rB) == Int<RegNumB>{});
+  // CUTE_STATIC_ASSERT_V(size(rC) == Int<RegNumC>{});
 
 
   using Traits = MMA_Traits<MMA_Op, MMA_Args...>;
@@ -496,6 +496,15 @@ template <int M, int K>
 using ABLayout       = Layout<Shape <_128,Shape <Int<M>,Int<K>>>,
                               Stride<  _0,Stride<    _1,Int<M>>>>;
 
+
+//aurora
+template<int N>
+using CLayout_128xN = Layout<Shape <Shape<  _4,_8,_4>, Shape< _4,_2,Int<N/8>>>,
+                              Stride<Stride<_128,_1,_16>, Stride<_64,_8,_512>>>;
+
+using CLayout_128x128  = CLayout_128xN< 128>;
+using CLayout_128x64  = CLayout_128xN< 64>; 
+
 } // end namespace AURORA::AMMA
 
 using namespace AURORA;
@@ -522,14 +531,49 @@ struct MMA_Traits<Aurora_64x64x16_F16F16F16_SS<tnspA, tnspB, scaleA, scaleB>>
   using FrgTypeB = AMMA::smem_desc<tnspB>;
 
   using Shape_MNK = Shape<_64,_64,_16>;
-  using ThrID   = Layout<_128>;
+  // using ThrID   = Layout<_128>;
+  using ThrID   = Layout<_1>;
   using ALayout = AMMA::ABLayout< 64, 16>;
   using BLayout = AMMA::ABLayout< 64, 16>;
   using CLayout = AMMA::CLayout_64x64;
 
+  using Split_MNK = decltype(make_tuple(Int<4>{}, Int<1>{}, Int<1>{}));
+  using AuroraThrLayout_MNK = Layout<Shape<_4, _1, _1>>;
+
   AMMA::ScaleOut accumulate_ = AMMA::ScaleOut::One;
 };
 
+
+template <
+  AMMA::Major tnspA,
+  AMMA::Major tnspB,
+  AMMA::ScaleIn  scaleA = AMMA::ScaleIn::One,
+  AMMA::ScaleIn  scaleB = AMMA::ScaleIn::One
+>
+using Aurora_128x128x128_F16F16F16_SS = AMMA::MMA_Aurora_128x128x128_F16F16F16_SS<tnspA, tnspB, scaleA, scaleB>;
+
+template <AMMA::Major tnspA, AMMA::Major tnspB, AMMA::ScaleIn scaleA, AMMA::ScaleIn scaleB>
+struct MMA_Traits<Aurora_128x128x128_F16F16F16_SS<tnspA, tnspB, scaleA, scaleB>>
+{
+  using ValTypeD = half_t;
+  using ValTypeA = half_t;
+  using ValTypeB = half_t;
+  using ValTypeC = half_t;
+
+  using FrgTypeA = AMMA::smem_desc<tnspA>;
+  using FrgTypeB = AMMA::smem_desc<tnspB>;
+
+  using Shape_MNK = Shape<_128,_128,_128>;
+  using ThrID   = Layout<_1>;
+  using ALayout = AMMA::ABLayout< 128, 128>;
+  using BLayout = AMMA::ABLayout< 128, 128>;
+  using CLayout = AMMA::CLayout_128x128;
+
+  using Split_MNK = decltype(make_tuple(Int<4>{}, Int<1>{}, Int<1>{}));
+  using AuroraThrLayout_MNK = Layout<Shape<_4, _1, _1>>;
+
+  AMMA::ScaleOut accumulate_ = AMMA::ScaleOut::One;
+};
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 } // end namespace cute

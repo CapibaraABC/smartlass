@@ -556,6 +556,16 @@ template <class A, class O, class B,
           class Shape>
 CUTE_HOST_DEVICE constexpr
 auto
+exchange_shape(ComposedLayout<A,O,B> const& layout,
+              Shape                 const& trg_shape)
+{
+  return composition(layout.layout_a(), layout.offset(), make_layout(trg_shape));
+}
+
+template <class A, class O, class B,
+          class Shape>
+CUTE_HOST_DEVICE constexpr
+auto
 filter(ComposedLayout<A,O,B> const& layout, Shape const& trg_profile)
 {
   return composition(layout.layout_a(), layout.offset(), filter(layout.layout_b(), trg_profile));

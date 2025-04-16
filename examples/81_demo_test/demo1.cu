@@ -103,6 +103,7 @@ gemm_device(ProblemShape shape_MNK, CtaTiler cta_tiler,
 
   auto cta_dma_a = dma_a.get_slice(blockIdx.x);
   auto cta_dma_b = dma_b.get_slice(blockIdx.y);
+
   Tensor tAgA = cta_dma_a.partition_S(gA);                      // (TMA,TMA_M,TMA_K,k)
   Tensor tAsA = cta_dma_a.partition_D(sA);
   Tensor tBgB = cta_dma_b.partition_S(gB);                                                   // (TMA,TMA_N,TMA_K,k)
@@ -260,6 +261,7 @@ gemm_device(ProblemShape shape_MNK, CtaTiler cta_tiler,
       {
         printf("================================\nB matrix loading, loading shape is:");print(shape(tBgB(_,_,0,pipe)));print("\n");
       }
+
       copy(dma_b.with(* tma_barrier), tBgB(_,_,_,k_tile), tBsB(_,_,_,pipe));
       ++mainloop_pipe_producer_state;
       --k_tile_count;
@@ -305,12 +307,14 @@ gemm_nt(int m, int n, int k,
   auto bN = Int<128>{};
   auto bK = Int< 64>{};
   auto cta_tiler = make_shape(bM, bN, bK);                   // (BLK_M, BLK_N, BLK_K)
+
   auto bP = Int<  2>{};  // Pipeline
 
   // Define the smem layouts (static)
   auto sA = tile_to_shape(AMMA::Layout_MN_SW128_Atom<TA>{}, make_shape(bM,bK,bP));
   auto sB = tile_to_shape(AMMA::Layout_MN_SW128_Atom<TA>{}, make_shape(bM,bK,bP));
   // print("sA  : "); print(sA); print("\n");
+
   // Define the MMA
   TiledMMA tiled_mma = make_tiled_mma(Aurora_64x64x16_F16F16F16_SS<AMMA::Major::MN,AMMA::Major::MN>{});
 

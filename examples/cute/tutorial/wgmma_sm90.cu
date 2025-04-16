@@ -381,8 +381,8 @@ gemm_nt(int m, int n, int k,
   auto dC = make_stride(Int<1>{}, ldC);                      // (dM, dN)
 
   // Define CTA tile sizes (static)
-  auto bM = Int<128>{};   //128
-  auto bN = Int<128>{};   //128
+  auto bM = Int<256>{};   //128
+  auto bN = Int<64>{};   //128
   auto bK = Int< 16>{};   //128
   auto cta_tiler = make_shape(bM, bN, bK);                   // (BLK_M, BLK_N, BLK_K)
   auto bP = Int<  3>{};  // Pipeline
@@ -397,6 +397,7 @@ gemm_nt(int m, int n, int k,
   //TiledMMA tiled_mma = make_tiled_mma(Aurora_128x128x8_F32F32F32_SS<AMMA::Major::MN,AMMA::Major::MN>{});
   // TiledMMA tiled_mma = make_tiled_mma(SM90_64x64x16_F16F16F16_SS<GMMA::Major::MN,GMMA::Major::MN>{}); 
   //TiledMMA tiled_mma = make_tiled_mma(Aurora_128x128x128_F16F16F16_SS<AMMA::Major::MN,AMMA::Major::MN>{});  //aurora_mma
+  
   TiledMMA tiled_mma = make_tiled_mma(Aurora_64x64x16_F16F16F16_SS<AMMA::Major::MN,AMMA::Major::MN>{});
   
 
@@ -452,90 +453,6 @@ gemm_nt(int m, int n, int k,
   }
 }
 
-// Setup params for a TN GEMM
-// template <class TA, class TB, class TC,
-//           class Alpha, class Beta>
-// void
-// gemm_tn(int m, int n, int k,
-//         Alpha alpha,
-//         TA const* A, int ldA,
-//         TB const* B, int ldB,
-//         Beta beta,
-//         TC      * C, int ldC,
-//         cudaStream_t stream = 0)
-// {
-//   // Define shapes (dynamic)
-//   auto M = int(m);
-//   auto N = int(n);
-//   auto K = int(k);
-//   auto prob_shape = make_shape(M, N, K);                     // (M, N, K)
-
-//   // Define TN strides (mixed)
-//   auto dA = make_stride(ldA, Int<1>{});                      // (dM, dK)
-//   auto dB = make_stride(ldB, Int<1>{});                      // (dN, dK)
-//   auto dC = make_stride(Int<1>{}, ldC);                      // (dM, dN)
-
-//   // Define CTA tile sizes (static)
-//   auto bM = Int<128>{};
-//   auto bN = Int<128>{};
-//   auto bK = Int< 64>{};
-//   auto cta_tiler = make_shape(bM, bN, bK);                   // (BLK_M, BLK_N, BLK_K)
-//   auto bP = Int<3>{};  // Pipeline
-
-//   // Define the smem layouts (static)
-//   auto sA = tile_to_shape(GMMA::Layout_K_SW128_Atom<TA>{}, make_shape(bM,bK,bP));
-//   auto sB = tile_to_shape(GMMA::Layout_K_SW128_Atom<TB>{}, make_shape(bN,bK,bP));
-
-//   // Define the MMA
-//   // TiledMMA tiled_mma = make_tiled_mma(SM90_64x64x16_F16F16F16_SS<GMMA::Major::K,GMMA::Major::K>{});
-//   TiledMMA tiled_mma = make_tiled_mma(Aurora_64x64x16_F16F16F16_SS<AMMA::Major::K,AMMA::Major::K>{});
-
-//   // Define the TMAs
-//   // Create Global memory tensors for TMA inspection
-//   Tensor mA = make_tensor(A, make_shape(M,K), dA);
-//   Tensor mB = make_tensor(B, make_shape(N,K), dB);
-
-//   // Create TMA Atoms with the desired copy operation on the source and destination
-//   Copy_Atom tmaA = make_tma_atom(SM90_TMA_LOAD{}, mA, sA(_,_,0), make_shape(bM,bK));
-//   Copy_Atom tmaB = make_tma_atom(SM90_TMA_LOAD{}, mB, sB(_,_,0), make_shape(bN,bK));
-
-//   //
-//   // Setup and Launch
-//   //
-
-//   // Launch parameter setup
-//   int smem_size = int(sizeof(SharedStorage<TA, TB, decltype(sA), decltype(sB)>));
-//   dim3 dimBlock(size(tiled_mma));
-//   dim3 dimCluster(2, 1, 1);
-//   dim3 dimGrid(round_up(size(ceil_div(m, bM)), dimCluster.x),
-//                round_up(size(ceil_div(n, bN)), dimCluster.y));
-//   cutlass::ClusterLaunchParams params = {dimGrid, dimBlock, dimCluster, smem_size};
-
-//   void const* kernel_ptr = reinterpret_cast<void const*>(
-//                               &gemm_device<decltype(prob_shape), decltype(cta_tiler),
-//                                            TA, decltype(sA), decltype(tmaA),
-//                                            TB, decltype(sB), decltype(tmaB),
-//                                            TC, decltype(dC), decltype(tiled_mma),
-//                                            decltype(alpha), decltype(beta)>);
-
-//   CUTE_CHECK_ERROR(cudaFuncSetAttribute(
-//     kernel_ptr,
-//     cudaFuncAttributeMaxDynamicSharedMemorySize,
-//     smem_size));
-
-//   // Kernel Launch
-//   cutlass::Status status = cutlass::launch_kernel_on_cluster(params, kernel_ptr,
-//                                                              prob_shape, cta_tiler,
-//                                                              A, tmaA,
-//                                                              B, tmaB,
-//                                                              C, dC, tiled_mma,
-//                                                              alpha, beta);
-//   CUTE_CHECK_LAST();
-
-//   if (status != cutlass::Status::kSuccess) {
-//     std::cerr << "Error: Failed at kernel Launch" << std::endl;
-//   }
-// }
 
 template <class TA, class TB, class TC,
           class Alpha, class Beta>

@@ -615,6 +615,18 @@ struct CollectiveMma<
     // We release buffers to producer warps(dma load) with some mmas in flight
     PipelineState smem_pipe_release = smem_pipe_read;
 
+    if(thread0()){
+      auto amnk = CtaShape_MNK{};
+      auto bM = get<0>(amnk);
+      auto bN = get<1>(amnk);
+      auto bK = get<2>(amnk);
+      printf("==== MMA_CTA# gridDim      : (%d, %d, %d)\n", gridDim.x, gridDim.y, gridDim.z);
+      printf("==== MMA_CTA# blockDim     : (%d, %d, %d)\n", blockDim.x, blockDim.y, blockDim.z);
+      printf("==== MMA_CTA# blockShape   : (%d, %d, %d)\n", (int)bM, (int)bN, (int)bK);
+      printf("==== MMA_CTA# blockLoop    : (%d, %d) @_[%u]_[%u]\n", gridDim.x, gridDim.y, blockIdx.x, blockIdx.y);
+      printf("==== MMA_CTA# Gmem C.coord : (%d, %d), Gmem C.Shape:(%d, %d)\n", blockIdx.x, blockIdx.y, (int)bM, (int)bN);
+    }
+
     // Prologue GMMAs
     int prologue_mma_count = min(K_PIPE_MMAS, k_tile_count);
     assert(k_tile_count >= 1);

@@ -1774,9 +1774,27 @@ upcast(Shape const& shape, Stride const& stride)
 template <int N, class Shape, class Stride>
 CUTE_HOST_DEVICE constexpr
 auto
+upcast_dm(Shape const& shape, Stride const& stride)
+{
+  return make_layout(shape, safe_div(stride, Int<N>{}));
+
+  CUTE_GCC_UNREACHABLE;
+}
+
+template <int N, class Shape, class Stride>
+CUTE_HOST_DEVICE constexpr
+auto
 upcast(Layout<Shape,Stride> const& layout)
 {
   return upcast<N>(layout.shape(), layout.stride());
+}
+
+template <int N, class Shape, class Stride>
+CUTE_HOST_DEVICE constexpr
+auto
+upcast_dm(Layout<Shape,Stride> const& layout)
+{
+  return upcast_dm<N>(layout.shape(), layout.stride());
 }
 
 //

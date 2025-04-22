@@ -122,11 +122,6 @@ gemm_device(ProblemShape shape_MNK, CtaTiler cta_tiler,
     
     print("---------------------\n");
   }
-
-  if(thread0()){
-    printf("==== CTA# gridDim      : (%d, %d, %d)\n", gridDim.x, gridDim.y, gridDim.z);
-    printf("==== CTA# blockDim     : (%d, %d, %d)\n", blockDim.x, blockDim.y, blockDim.z);
-  }
   
   // PREFETCH
   //
@@ -314,7 +309,7 @@ gemm_nt(int m, int n, int k,
 
   // Define the smem layouts (static)
   auto sA = exchange_shape(AMMA::Layout_MN_SW128_Atom<TA>{}, make_shape(bM,bK,bP));
-  auto sB = exchange_shape(AMMA::Layout_MN_SW128_Atom<TA>{}, make_shape(bM,bK,bP));
+  auto sB = exchange_shape(AMMA::Layout_MN_SW128_Atom<TA>{}, make_shape(bN,bK,bP));
   print("sA  : "); print(sA); print("\n");
   // Define the MMA
   TiledMMA tiled_mma = make_tiled_mma(Aurora_128x128x128_F16F16F16_SS<AMMA::Major::MN,AMMA::Major::MN>{});
@@ -372,7 +367,7 @@ int main(int argc, char** argv)
 {
     int m = 256;
     int n = 256;
-    int k = 128;
+    int k = 256;
     using TA = cute::half_t;
     using TB = cute::half_t;
     using TC = cute::half_t;

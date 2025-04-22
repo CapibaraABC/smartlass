@@ -108,6 +108,7 @@ struct ComposedLayout : private cute::tuple<LayoutA, Offset, LayoutB>  // EBO fo
   // Map a logical coordinate to a linear index (Coord has no Underscore slice operators)
   // OR
   // Slice the layout and return the sublayout (Coord has an Underscore slice op)
+
   template <class Coord>
   CUTE_HOST_DEVICE constexpr
   auto
@@ -324,6 +325,7 @@ group(ComposedLayout<A,O,B> const& a)
 // Slice a ComposedLayout
 //
 
+// origin
 template <class Coord, class A, class O, class B>
 CUTE_HOST_DEVICE constexpr
 auto
@@ -332,6 +334,17 @@ slice_and_offset(Coord const& coord, ComposedLayout<A,O,B> const& layout)
   auto [slice, offset] = slice_and_offset(coord, layout.layout_b());
   return cute::make_tuple(ComposedLayout{layout.layout_a(), layout.offset() + offset, slice}, Int<0>{});
 }
+
+// template <class Coord, class A, class O, class B>
+// CUTE_HOST_DEVICE constexpr
+// auto
+// slice_and_offset(Coord const& coord, ComposedLayout<A,O,B> const& layout)
+// {
+//   auto slice = slice(coord, layout.layout_b());
+//   // auto slice = layout.layout_b()(coord);
+//   return cute::make_tuple(ComposedLayout{layout.layout_a(), layout.offset(), slice}, Int<0>{});
+//   // return cute::make_tuple(ComposedLayout{layout.layout_a(), layout.offset(), layout.layout_b()}, Int<0>{});
+// }
 
 template <class Coord, class A, class O, class B>
 CUTE_HOST_DEVICE constexpr
@@ -560,6 +573,26 @@ exchange_shape(ComposedLayout<A,O,B> const& layout,
               Shape                 const& trg_shape)
 {
   return composition(layout.layout_a(), layout.offset(), make_layout(trg_shape));
+}
+
+template <class A, class O, class B,
+          class Shape>
+CUTE_HOST_DEVICE constexpr
+auto
+tile_to_dm_shape(ComposedLayout<A,O,B> const& layout,
+              Shape                 const& trg_shape)
+{
+  auto begin_layout = layout.layout_b();
+  auto dm_shape = shape(begin_layout);
+  auto main_shape = make_shape(get<0>(trg_shape),get<1>(trg_shape));
+  
+  auto intermedia_layout = make_ordered_layout(ceil_div(main_shape, dm_shape), Step<_1, _0>{});
+  auto last_shape = make_shape(get<2>(trg_shape));
+  // auto last_stride = make_stride(cosize(begin_layout)*size(begin_layout));
+  auto last_stride = make_stride(get<0>(begin_layout.shape()) * get<0>(begin_layout.stride()));
+  auto last_layout = make_layout(last_shape, last_stride);
+
+  return composition(layout.layout_a(), layout.offset(), make_layout(intermedia_layout, begin_layout, last_layout));
 }
 
 template <class A, class O, class B,

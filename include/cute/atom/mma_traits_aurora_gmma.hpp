@@ -72,6 +72,8 @@ namespace AURORA::AMMA {
 ///////////////////////////////////////////
 // Common layouts for GMMA Shared Memory //
 ///////////////////////////////////////////
+using Layout_DM_SW128_Atom_Bits = ComposedLayout<Swizzle<3,4,3>, smem_ptr_flag, Layout<Shape<_2,_1>,Stride<Int<2097152>,_0>>>;
+
 
 // M|N-major GMMA layouts in units of bits
 using Layout_MN_INTER_Atom_Bits = ComposedLayout<Swizzle<0,4,3>, smem_ptr_flag, Layout<Shape< _128,_8>,Stride<_1, _128>>>;
@@ -94,6 +96,8 @@ template <class Type>
 using Layout_MN_SW64_Atom  = decltype(upcast<sizeof_bits<Type>::value>(Layout_MN_SW64_Atom_Bits{}));
 template <class Type>
 using Layout_MN_SW128_Atom = decltype(upcast<sizeof_bits<Type>::value>(Layout_MN_SW128_Atom_Bits{}));
+template <class Type>
+using Layout_DM_SW128_Atom = decltype(upcast_dm<sizeof_bits<Type>::value>(Layout_DM_SW128_Atom_Bits{}));
 
 // K-major layouts in units of Type
 template <class Type>
@@ -300,6 +304,41 @@ make_gmma_desc(Tensor<TEngine,TLayout> const& tensor)
   return desc;
 }
 
+template <Major MajorMode, class TEngine, class TLayout>
+CUTE_HOST_DEVICE constexpr
+DMDescriptor
+aurora_make_dm_desc(Tensor<TEngine,TLayout> const& tensor)
+{
+  static_assert(is_smem<TEngine>::value, "GMMA Descriptors can only be constructed on smem.");
+  static_assert(TLayout::rank == 2, "GMMA Descriptors can only be constructed on rank-2 tensors.");
+  using value_type = typename TEngine::value_type;
+
+  Tensor u128_tensor = recast<uint128_t const>(tensor);
+  auto layouta = layout(tensor);    //(_64,_16):(_1,_128)
+  auto dm_addr = tensor.data();        //addr:Sw<3,4,3>_smem_ptr[16b](0x7dc400002400)
+  uint64_t show_ptr = static_cast<uint64_t>(cast_smem_ptr_to_uint(raw_pointer_cast(tensor.data())));    //show_ptr:ptr[16b](0x7dc400002400)  9216?
+  
+  DMDescriptor aurora_dm_desc; 
+  aurora_dm_desc.shape0 = size<0>(layout(tensor));
+  aurora_dm_desc.shape1 = size<1>(layout(tensor));
+  aurora_dm_desc.dm_addr = show_ptr;
+
+#if 0
+  if(thread0()){
+    print("in make_dm_desc:\n");
+    print("tensor:");print(tensor);print("\n");
+    print("u128_tensor:");print(u128_tensor);print("\n");
+    print("layout:");print(layouta);print("\n");
+    print("dm_addr:");print(dm_addr);print("\n");
+    print("show_ptr:");print(show_ptr);print("\n");
+    // print(aurora_dm_desc);print("\n");
+
+    print("\n\n");
+  }
+#endif
+  return aurora_dm_desc;
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 // Higher level GMMA Descriptor utilities
 ///////////////////////////////////////////////////////////////////////////////
@@ -356,6 +395,61 @@ print(DescriptorIterator) {
 template <Major>
 struct smem_desc : DescriptorIterator {};
 
+
+///////////////////////////
+///DMDescriptorIterator
+//////////////////////////
+
+struct DMDescriptorIterator
+{
+  using reference    = DMDescriptor;
+  using element_type = DMDescriptor;
+  using value_type   = DMDescriptor;
+
+  DMDescriptor desc_;
+
+  // Dereference returns the AmmaDescriptor
+  CUTE_HOST_DEVICE constexpr
+  reference operator*() const { return desc_; }
+
+  // Advance and return a new AmmaDescriptor
+  template <class Index>
+  CUTE_HOST_DEVICE constexpr
+  reference operator[](Index const& i) const { return *(*this + i); }
+
+  // Return an advanced iterator
+  template <class Index>
+  CUTE_HOST_DEVICE constexpr
+  DMDescriptorIterator operator+(Index const& offset) const
+  {
+    return { DMDescriptor{desc_ + uint64_t(offset)} };
+  }
+};
+
+template <class T>
+CUTE_HOST_DEVICE constexpr
+DMDescriptor
+raw_pointer_cast(DMDescriptorIterator const& ptr) {
+  return ptr.desc_;
+}
+
+// Recast a DescriptorIterator Tensor to uint64_t, it's RegType in mma_unpack
+template <class NewT>
+CUTE_HOST_DEVICE constexpr
+DMDescriptorIterator
+recast_ptr(DMDescriptorIterator const& iter) {
+  static_assert(is_same<NewT, uint64_t>::value, "Can only cast AmmaDescriptorIterator to uint64_t.");
+  return iter;  // Do nothing, it will still dereference to AmmaDescriptor and decay to uint64_t
+}
+
+CUTE_HOST_DEVICE void
+print(DMDescriptorIterator) {
+  printf("AMMA::DMDescriptorIterator");
+}
+
+template <Major>
+struct dm_desc : DMDescriptorIterator {};
+
 } // end namespace AURORA::AMMA
 
 // Customization point for creating a GMMA::smem_desc Tensor
@@ -367,8 +461,44 @@ struct MakeTensor<AURORA::AMMA::smem_desc<MajorMode>>
   operator()(Tensor<TEngine,TLayout> const& smem_tensor)
   {
     static_assert(is_smem<TEngine>::value, "Expected SMEM Tensor to construct a GMMA Desc Tensor");
+    auto other = make_tensor(AURORA::AMMA::DMDescriptorIterator{AURORA::AMMA::aurora_make_dm_desc<MajorMode>(tensor<0>(smem_tensor))},
+                             replace<0>(recast<uint128_t const>(smem_tensor).layout(), Layout<_1,_0>{}));
+#if 0
+    if(thread0()){
+      auto dm_desc_iter = AURORA::AMMA::DMDescriptorIterator{AURORA::AMMA::aurora_make_dm_desc<MajorMode>(tensor<0>(smem_tensor))};
+      auto dm_desc = AURORA::AMMA::aurora_make_dm_desc<MajorMode>(tensor<0>(smem_tensor));
+      print("in MakeTensor.\n");
+      print("other:");print(other);print("\n");
+      print("dm_desc_iter:");print(dm_desc_iter);print("\n");
+      print("dm_desc:");print(dm_desc);print("\n");
+    }
+#endif
     return make_tensor(AURORA::AMMA::DescriptorIterator{AURORA::AMMA::make_gmma_desc<MajorMode>(tensor<0>(smem_tensor))},
                        replace<0>(recast<uint128_t const>(smem_tensor).layout(), Layout<_1,_0>{}));
+  }
+};
+
+// Customization point for creating a AMMA::dm_desc Tensor
+template <AURORA::AMMA::Major MajorMode>
+struct MakeTensor<AURORA::AMMA::dm_desc<MajorMode>>
+{
+  template <class TEngine, class TLayout>
+  CUTE_HOST_DEVICE constexpr auto
+  operator()(Tensor<TEngine,TLayout> const& smem_tensor)
+  {
+    static_assert(is_smem<TEngine>::value, "Expected SMEM Tensor to construct a GMMA Desc Tensor");
+    auto other = make_tensor(AURORA::AMMA::DMDescriptorIterator{AURORA::AMMA::aurora_make_dm_desc<MajorMode>(tensor<0>(smem_tensor))},
+                             replace<0>(recast<uint128_t const>(smem_tensor).layout(), Layout<_1,_0>{}));
+#if 0
+    if(thread0()){
+      auto dm_desc_iter = AURORA::AMMA::DMDescriptorIterator{AURORA::AMMA::aurora_make_dm_desc<MajorMode>(tensor<0>(smem_tensor))};
+      print("in MakeTensor.\n");
+      print("other:");print(other);print("\n");
+      print("dm_desc_iter:");print(dm_desc_iter);print("\n");
+    }
+#endif
+    return make_tensor(AURORA::AMMA::DMDescriptorIterator{AURORA::AMMA::aurora_make_dm_desc<MajorMode>(tensor<0>(smem_tensor))},
+                                                  replace<0>(recast<uint128_t const>(smem_tensor).layout(), Layout<_1,_0>{}));
   }
 };
 
@@ -461,6 +591,63 @@ mma_unpack(MMA_Traits<MMA_Op, MMA_Args...> const& traits,
   //                 &(traits.accumulate_), seq<0>{});
 }
 
+template <class MMA_Op, class... MMA_Args,
+          class TD, class DLayout,
+          class TA, class ALayout,
+          class TB, class BLayout,
+          class TC, class CLayout>
+CUTE_HOST_DEVICE constexpr
+void
+mma_spu_unpack(MMA_Traits<MMA_Op, MMA_Args...> const& traits,
+           Tensor<TD, DLayout>      & D,
+           Tensor<TA, ALayout> const& A,
+           Tensor<TB, BLayout> const& B,
+           Tensor<TC, CLayout> const& C)
+{
+  static_assert(is_rmem<TD>::value, "Expected registers in MMA_Atom::call");
+  static_assert(is_rmem<TA>::value, "Expected registers in MMA_Atom::call");
+  static_assert(is_rmem<TB>::value, "Expected registers in MMA_Atom::call");
+  static_assert(is_rmem<TC>::value, "Expected registers in MMA_Atom::call");
+
+  // SM90 GMMA take three arguments rather than four, try to assert C and D are aliased
+  static_assert(is_same<typename TD::value_type, typename TC::value_type>::value, "GMMA C and D value_type must match.");
+  static_assert(is_same<DLayout, CLayout>::value, "GMMA C and D layouts must match.");
+  assert((void*)&C == (void*)&D);
+  
+  uint32_t m = A.data().desc_.shape0;
+  uint32_t n = B.data().desc_.shape0;
+  uint32_t k = A.data().desc_.shape1;
+  uint16_t alpha = 0;
+
+  assert(m == get<0>(shape(C)));      //A.M = C.M
+  assert(n = get<1>(shape(C)));       //A.N = C.N
+  assert(k == B.data().desc_.shape1); //A.K = B.K
+
+  uint64_t addressA = A.data().desc_.dm_addr;
+  uint64_t addressB = B.data().desc_.dm_addr;
+  
+  auto MatrixA = reinterpret_cast<void*>(addressA);
+  auto MatrixB = reinterpret_cast<void*>(addressB);
+  auto MatrixC = C.data();                           //C.data is the const cutlass::half_t* const type
+
+#if 0
+  using cute::print;
+  if(thread0()){
+    print("in mma_spu_unpack.\n");
+    print("m:");print(m);print("\n");
+    print("n:");print(n);print("\n");
+    print("k:");print(k);print("\n");
+    print("MatrixA:");print(MatrixA);print("\n");
+  }
+#endif
+
+  detail::explode_tuple(MMA_Op::gemm_cal,
+                        make_tuple(alpha), seq<0>{},
+                        make_tuple(m, n, k), seq<0,1,2>{},
+                        make_tuple(MatrixA, MatrixB, (void*)MatrixC), seq<0,1,2>{}
+                        );
+}
+
 // Accumulator layouts
 template<int N>
 using CLayout_64xN   = Layout<Shape <Shape <  _4,_8, _4>,Shape < _2,_2,Int<N/8>>>,
@@ -531,13 +718,11 @@ struct MMA_Traits<Aurora_64x64x16_F16F16F16_SS<tnspA, tnspB, scaleA, scaleB>>
   using FrgTypeB = AMMA::smem_desc<tnspB>;
 
   using Shape_MNK = Shape<_64,_64,_16>;
-  // using ThrID   = Layout<_128>;
-  using ThrID   = Layout<_1>;
+  using ThrID   = Layout<_128>;
   using ALayout = AMMA::ABLayout< 64, 16>;
   using BLayout = AMMA::ABLayout< 64, 16>;
   using CLayout = AMMA::CLayout_64x64;
 
-  using Split_MNK = decltype(make_tuple(Int<4>{}, Int<1>{}, Int<1>{}));
   using AuroraThrLayout_MNK = Layout<Shape<_4, _1, _1>>;
 
   AMMA::ScaleOut accumulate_ = AMMA::ScaleOut::One;
@@ -564,13 +749,87 @@ struct MMA_Traits<Aurora_128x128x128_F16F16F16_SS<tnspA, tnspB, scaleA, scaleB>>
   using FrgTypeB = AMMA::smem_desc<tnspB>;
 
   using Shape_MNK = Shape<_128,_128,_128>;
-  using ThrID   = Layout<_1>;
+  //using ThrID   = Layout<_1>;
+  using ThrID   = Layout<Shape<_2, _2, _1>>;
+  using ALayout = AMMA::ABLayout< 128, 128>;
+  using BLayout = AMMA::ABLayout< 128, 128>;
+  using CLayout = AMMA::CLayout_128x128;
+
+  using AuroraThrLayout_MNK = Layout<Shape<_2, _2, _1>>;
+
+  AMMA::ScaleOut accumulate_ = AMMA::ScaleOut::One;
+};
+
+template <
+  AMMA::Major tnspA,
+  AMMA::Major tnspB,
+  AMMA::ScaleIn  scaleA = AMMA::ScaleIn::One,
+  AMMA::ScaleIn  scaleB = AMMA::ScaleIn::One
+>
+using Aurora_128x128x128_F16F16F16_APELayoutM2N2K1_SS = AMMA::MMA_Aurora_128x128x128_F16F16F16_APELayoutM2N2K1_SS<tnspA, tnspB, scaleA, scaleB>;
+
+template <AMMA::Major tnspA, AMMA::Major tnspB, AMMA::ScaleIn scaleA, AMMA::ScaleIn scaleB>
+struct MMA_Traits<Aurora_128x128x128_F16F16F16_APELayoutM2N2K1_SS<tnspA, tnspB, scaleA, scaleB>>
+{
+  using ValTypeD = half_t;
+  using ValTypeA = half_t;
+  using ValTypeB = half_t;
+  using ValTypeC = half_t;
+
+  using FrgTypeA = AMMA::dm_desc<tnspA>;                //dm descriptor iterator
+  using FrgTypeB = AMMA::dm_desc<tnspB>;
+
+  using Shape_MNK = Shape<_128,_128,_128>;
+  using ThrID   = Layout<_1>;                           //to calculate a mma_atom only needs 1 thread
+  // using ThrID   = Layout<Shape<_2, _2, _1>>;
   using ALayout = AMMA::ABLayout< 128, 128>;
   using BLayout = AMMA::ABLayout< 128, 128>;
   using CLayout = AMMA::CLayout_128x128;
 
   using Split_MNK = decltype(make_tuple(Int<4>{}, Int<1>{}, Int<1>{}));
-  using AuroraThrLayout_MNK = Layout<Shape<_4, _1, _1>>;
+  /**
+   * APE layout is 2*2*1, which means we split A to 2*1, B to 2*1, C to 2*2 for an CTA.
+   * layout_MNK=2 2 1
+   * 
+   */
+  using AuroraThrLayout_MNK = Layout<Shape<_2, _2, _1>>;   
+
+  AMMA::ScaleOut accumulate_ = AMMA::ScaleOut::One;
+};
+
+template <
+  AMMA::Major tnspA,
+  AMMA::Major tnspB,
+  AMMA::ScaleIn  scaleA = AMMA::ScaleIn::One,
+  AMMA::ScaleIn  scaleB = AMMA::ScaleIn::One
+>
+using Aurora_128x128x128_F16F16F16_APELayoutM1N1K1_SS = AMMA::MMA_Aurora_128x128x128_F16F16F16_APELayoutM1N1K1_SS<tnspA, tnspB, scaleA, scaleB>;
+
+template <AMMA::Major tnspA, AMMA::Major tnspB, AMMA::ScaleIn scaleA, AMMA::ScaleIn scaleB>
+struct MMA_Traits<Aurora_128x128x128_F16F16F16_APELayoutM1N1K1_SS<tnspA, tnspB, scaleA, scaleB>>
+{
+  using ValTypeD = half_t;
+  using ValTypeA = half_t;
+  using ValTypeB = half_t;
+  using ValTypeC = half_t;
+
+  using FrgTypeA = AMMA::dm_desc<tnspA>;                //dm descriptor iterator
+  using FrgTypeB = AMMA::dm_desc<tnspB>;
+
+  using Shape_MNK = Shape<_128,_128,_128>;
+  using ThrID   = Layout<_1>;                           //to calculate a mma_atom only needs 1 thread
+  // using ThrID   = Layout<Shape<_2, _2, _1>>;
+  using ALayout = AMMA::ABLayout< 128, 128>;
+  using BLayout = AMMA::ABLayout< 128, 128>;
+  using CLayout = AMMA::CLayout_128x128;
+
+  using Split_MNK = decltype(make_tuple(Int<4>{}, Int<1>{}, Int<1>{}));
+  /**
+   * APE layout is 2*2*1, which means we split A to 2*1, B to 2*1, C to 2*2 for an CTA.
+   * layout_MNK=2 2 1
+   * 
+   */
+  using AuroraThrLayout_MNK = Layout<Shape<_1, _1, _1>>;   
 
   AMMA::ScaleOut accumulate_ = AMMA::ScaleOut::One;
 };

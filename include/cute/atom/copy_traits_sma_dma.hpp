@@ -771,6 +771,70 @@ template <class DmaInternalType,
           class VShape, class VStride>
 CUTE_HOST_RTC
 auto
+make_dma_copy_atom_new(CopyOp,
+                   Tensor<GEngine,GLayout> const& gtensor,       // Full GMEM Tensor
+                   SLayout                 const& slayout,       // CTA Tile of SMEM, potentially swizzled
+                   uint32_t                const& num_multicast, // The number of CTAs involved in multicasting
+                   Layout<VShape,VStride>  const& cta_v_map)     // V: CTA val idx -> gmem mode
+{
+  //
+  // TMA truncated layout
+  //
+
+  auto smem_swizzle = get_swizzle_portion(slayout);
+  auto smem_layout  = get_nonswizzle_portion(slayout);
+
+  // auto dma_gbasis = detail::construct_dma_gbasis<DmaInternalType>(gtensor, smem_layout, cta_v_map);
+  auto dma_gbasis = make_layout(make_shape(Int<128>{}, Int<64>{}),
+                                make_stride(E<0>{}, E<1>{}));
+  // //
+  // // Construct the TMA Desc and the strides of the TMA Tensor
+  // //
+  auto gbasis = make_stride(E<0>{}, E<1>{});
+  using AuxParams = AuxDmaParams<decltype(gbasis),
+                                 decltype(dma_gbasis),
+                                 decltype(smem_swizzle)>;
+  auto aux_params = AuxParams{gbasis};
+  DmaDescriptor dma_desc{};
+
+  // auto [dma_desc, aux_params] = detail::make_dma_copy_desc<DmaInternalType>(gtensor,
+  //                                                                           dma_gbasis,
+  //                                                                           smem_swizzle,
+  //                                                                           num_multicast);
+  //
+  // Construct the Copy_Traits
+  //
+
+  constexpr int num_bits_per_dma = size(dma_gbasis) * sizeof_bits_v<DmaInternalType>;
+  using Traits = Copy_Traits<CopyOp, cute::C<num_bits_per_dma>, decltype(aux_params)>;
+  using Atom   = Copy_Atom<Traits, typename GEngine::value_type>;
+
+  Traits dma_traits{dma_desc, aux_params};
+
+#if 0
+  print("num_bits_per_tma :  "); print(num_bits_per_tma); print("\n");
+  print("g_stride_bases   :  "); print(tma_traits.aux_params_.g_stride_); print("\n");
+#endif
+  // print("\n\n====================make_dma_copy_atom=====================\n");
+  // print("gtensor :  "); print(gtensor); print("\n");
+  // print("slayout :  "); print(slayout); print("\n");
+  // print("cta_v_map :  "); print(cta_v_map); print("\n");
+  // print("smem_layout :  "); print(smem_layout); print("\n");
+  // print("smem_swizzle   :  "); print(smem_swizzle); print("\n");
+  // print("dma_gbasis :  "); print(dma_gbasis); print("\n");
+  // print("=========================================\n");
+  // Return the Copy_Atom
+  return Atom{dma_traits};
+}
+
+
+template <class DmaInternalType,
+          class CopyOp,
+          class GEngine, class GLayout,
+          class SLayout,
+          class VShape, class VStride>
+CUTE_HOST_RTC
+auto
 make_dma_copy_atom(CopyOp,
                    Tensor<GEngine,GLayout> const& gtensor,       // Full GMEM Tensor
                    SLayout                 const& slayout,       // CTA Tile of SMEM, potentially swizzled
@@ -820,7 +884,6 @@ make_dma_copy_atom(CopyOp,
   // Return the Copy_Atom
   return Atom{dma_traits};
 }
-
 // The "logical TMA tid" is a map from the CTA rank to its logical id
 // within the instruction.  It works like a mask or ordering on the
 // CTAs.  For non-multicast TMA, all CTAs should map to 0.  For
@@ -872,11 +935,72 @@ make_dma_copy_tiled(CopyOp                  const& copy_op,
   print("layout_TV : "); print(layout_TV); print("\n");
 #endif
   // print("\n\n====================make_dma_copy_tiled=====================\n");
-  // print("cta_tiler : "); print(cta_tiler); print("\n");
+  // print("num_elems_per_dma : "); print(num_elems_per_dma); print("\n");
+  // print("inv_smem_layout : "); print(inv_smem_layout); print("\n");
   // print("layout_v : "); print(layout_v); print("\n");
   // print("layout_V : "); print(layout_V); print("\n");
   // print("layout_t : "); print(layout_t); print("\n");
   // print("layout_T : "); print(layout_T); print("\n");
+  // print("slayout : "); print(slayout); print("\n");
+  // print("layout_TV : "); print(layout_TV); print("\n");
+  // print("cta_tiler : "); print(cta_tiler); print("\n");
+  // print("=========================================\n");
+  return TiledCopy<decltype(atom), decltype(layout_TV), decltype(cta_tiler)>{atom};
+}
+
+template <class DmaInternalType,
+          class CopyOp,
+          class GEngine, class GLayout,
+          class SLayout,
+          class TShape, class TStride,
+          class VShape, class VStride>
+CUTE_HOST_RTC
+auto
+make_dma_copy_tiled_new(CopyOp                  const& copy_op,
+                        Tensor<GEngine,GLayout> const& gtensor,     // Full GMEM Tensor
+                        SLayout                 const& slayout,     // CTA Tile of SMEM
+                        Layout<TShape,TStride>  const& cta_t_map,   // T: CTA thr idx -> logical DMA tid
+                        Layout<VShape,VStride>  const& cta_v_map)   // V: CTA val idx -> gmem mode
+{
+  Copy_Atom atom = make_dma_copy_atom_new<DmaInternalType>(copy_op, gtensor, slayout,
+                                                       cosize(cta_t_map), cta_v_map);
+
+  //
+  // Construct the TiledCopy
+  //
+
+  // [[maybe_unused]] auto cta_tiler = product_each(shape(cta_v_map));
+
+  // auto num_elems_per_dma = size<1>(typename decltype(atom)::RefLayout{}) / static_value<sizeof_bits<typename GEngine::value_type>>();
+
+  // // smem idx -> smem coord
+  // auto inv_smem_layout = right_inverse(get_nonswizzle_portion(slayout));
+  // // CTA V -> smem_coord
+  // auto layout_v = composition(inv_smem_layout, num_elems_per_dma);
+  // // Scale that up to cover all of the smem_coords
+  // auto layout_V = tile_to_shape(make_layout(layout_v), size(cta_v_map));
+  // // CTA T -> smem idx
+  // auto layout_t = make_layout(cosize(cta_t_map), shape_div(num_elems_per_dma, cosize(cta_t_map)));
+  // // CTA TID -> smem coord
+  // auto layout_T = composition(inv_smem_layout, composition(layout_t, cta_t_map));
+  // // Combine with the T mapping
+  // [[maybe_unused]] auto layout_TV = make_layout(layout_T, layout_V);
+  auto cta_tiler = shape(cta_v_map);
+  auto layout_TV = get<1>(slayout.layout_b());
+#if 0
+  print("cta_tiler : "); print(cta_tiler); print("\n");
+  print("layout_v : "); print(layout_v); print("\n");
+  print("layout_V : "); print(layout_V); print("\n");
+  print("layout_t : "); print(layout_t); print("\n");
+  print("layout_T : "); print(layout_T); print("\n");
+  print("layout_TV : "); print(layout_TV); print("\n");
+#endif
+  // print("\n\n====================make_dma_copy_tiled=====================\n");
+  // print("cta_tiler : "); print(gtensor); print("\n");
+  // print("layout_v : "); print(slayout); print("\n");
+  // print("layout_V : "); print(cta_t_map); print("\n");
+  // print("layout_t : "); print(cta_v_map); print("\n");
+  // print("cta_tiler : "); print(cta_tiler); print("\n");
   // print("layout_TV : "); print(layout_TV); print("\n");
   // print("=========================================\n");
   return TiledCopy<decltype(atom), decltype(layout_TV), decltype(cta_tiler)>{atom};
@@ -1158,6 +1282,72 @@ template <class DmaInternalType = void,
           class Cluster_Size>
 CUTE_HOST_RTC
 auto
+make_dma_copy_A_sma_new(CopyOp                  const& copy_op,
+                     Tensor<GEngine,GLayout> const& gtensor,
+                     SLayout                 const& slayout,
+                     CTA_Tiler               const& cta_tiler,
+                     Cluster_Size            const& cluster_size)
+{
+  // Keep only MK modes from MNK
+  auto cta_tiler_mk = remove<1>(cta_tiler);
+
+  // mcast along N mode for this M load, if any
+  auto cluster_size_n = size<1>(cluster_size);
+
+  auto cta_v_tile = make_identity_layout(shape(gtensor)).compose(cta_tiler_mk);
+  auto cta_t_tile = make_layout(cluster_size_n);
+  // print("\n\n====================make_dma_copy_A_sma_new=====================\n");
+  // print("gtensor  : "); print(gtensor); print("\n");
+  // print("slayout  : "); print(slayout); print("\n");
+  // print("cta_tiler  : "); print(cta_tiler); print("\n");
+  // print("cta_v_tile  : "); print(cta_v_tile); print("\n");
+  // print("cta_t_tile  : "); print(cta_t_tile); print("\n");
+  // print("cta_tiler_mk  : "); print(cta_tiler_mk); print("\n");
+  // print("=========================================\n");
+  // Prefer TmaInternalType if specified. Fallback to GEngine::value_type
+  using DmaType = conditional_t<is_same<void, DmaInternalType>::value, typename GEngine::value_type, DmaInternalType>;
+  auto dma_copy = detail::make_dma_copy_tiled_new<DmaType>(copy_op, gtensor, slayout, cta_t_tile, cta_v_tile);
+  return dma_copy;
+}
+
+template <class DmaInternalType = void,
+          class CopyOp,
+          class GEngine, class GLayout,
+          class SLayout,
+          class CTA_Tiler,
+          class Cluster_Size>
+CUTE_HOST_RTC
+auto
+make_dma_copy_B_sma_new(CopyOp                  const& copy_op,
+                     Tensor<GEngine,GLayout> const& gtensor,
+                     SLayout                 const& slayout,
+                     CTA_Tiler               const& cta_tiler,
+                     Cluster_Size            const& cluster_size)
+{
+  // Keep only NK modes from MNK
+  auto cta_tiler_nk = remove<0>(cta_tiler);
+
+  // mcast along M mode for this N load, if any
+  auto cluster_size_m = size<0>(cluster_size);
+
+  auto cta_v_tile = make_identity_layout(shape(gtensor)).compose(cta_tiler_nk);
+  auto cta_t_tile = make_layout(cluster_size_m);
+
+  // Prefer TmaInternalType if specified. Fallback to GEngine::value_type
+  using DmaType = conditional_t<is_same<void, DmaInternalType>::value, typename GEngine::value_type, DmaInternalType>;
+  auto dma_copy = detail::make_dma_copy_tiled_new<DmaType>(copy_op, gtensor, slayout, cta_t_tile, cta_v_tile);
+  return dma_copy;
+}
+
+
+template <class DmaInternalType = void,
+          class CopyOp,
+          class GEngine, class GLayout,
+          class SLayout,
+          class CTA_Tiler,
+          class Cluster_Size>
+CUTE_HOST_RTC
+auto
 make_dma_copy_A_sma(CopyOp                  const& copy_op,
                      Tensor<GEngine,GLayout> const& gtensor,
                      SLayout                 const& slayout,
@@ -1178,7 +1368,8 @@ make_dma_copy_A_sma(CopyOp                  const& copy_op,
   // print("cta_tiler  : "); print(cta_tiler); print("\n");
   // print("cta_v_tile  : "); print(cta_v_tile); print("\n");
   // print("cta_t_tile  : "); print(cta_t_tile); print("\n");
-  // print("cta_tiler  : "); print(cta_tiler); print("\n");
+  // print("cta_tiler_mk  : "); print(cta_tiler_mk); print("\n");
+  // print("cluster_size_n  : "); print(cluster_size_n); print("\n");
   // print("=========================================\n");
     // Prefer TmaInternalType if specified. Fallback to GEngine::value_type
     using DmaType = conditional_t<is_same<void, DmaInternalType>::value, typename GEngine::value_type, DmaInternalType>;

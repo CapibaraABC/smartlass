@@ -233,6 +233,7 @@ copy(Copy_Atom<CopyArgs...>       const& copy_atom,
       CUTE_UNROLL
       for (int i = 0; i < size<1>(dst_c); ++i) {
         if (thread0() && whether_print) {
+          print("    dst layout  : "); print(dst_c(_,i)); print("\n");
           printf("epoch %4d     ",i);
         }
         copy_atom.call(src_c(_,i), dst_c(_,i));

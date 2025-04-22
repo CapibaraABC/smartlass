@@ -78,6 +78,15 @@ upcast(ComposedLayout<SwizzleFn,smem_ptr_flag_bits<B>,Layout> const& layout)
 template <int N, class SwizzleFn, int B, class Layout>
 CUTE_HOST_DEVICE constexpr
 auto
+upcast_dm(ComposedLayout<SwizzleFn,smem_ptr_flag_bits<B>,Layout> const& layout)
+{
+  return composition(layout.layout_a(), smem_ptr_flag_bits<B*N>{}, upcast<N>(layout.layout_b()));
+}
+
+
+template <int N, class SwizzleFn, int B, class Layout>
+CUTE_HOST_DEVICE constexpr
+auto
 downcast(ComposedLayout<SwizzleFn,smem_ptr_flag_bits<B>,Layout> const& layout)
 {
   return composition(layout.layout_a(), smem_ptr_flag_bits<B/N>{}, downcast<N>(layout.layout_b()));

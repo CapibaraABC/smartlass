@@ -39,9 +39,10 @@ cutlass_example_add_executable(
   )
 
 cutlass_example_add_executable(
-  ape4mul1_demo_mma
-  ape4mul1_demo_mma.cu
+  apc_copy_demo
+  apc_copy_demo.cu
   )
+
 
 # cutlass_example_add_executable(
 #   tmp_comp

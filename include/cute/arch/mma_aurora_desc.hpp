@@ -29,128 +29,183 @@
  *
  **************************************************************************************************/
 
-#pragma once
+ #pragma once
 
-#include <cute/config.hpp>
-
-#include <cute/arch/mma.hpp>
-
-// Config
-#if (defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 900) && defined(__CUDA_ARCH_FEAT_SM90_ALL))
-#    define CUTE_ARCH_MMA_SM90A_ENABLED
-#endif
-
-////////////////////////////////////////////////////////////////////////////////////////////////////
-
-namespace cute {
-
-////////////////////////////////////////////////////////////////////////////////////////////////////
-// Amma Descriptor and utilities
-
-// Amma enums and utilities
-namespace AURORA::AMMA {
-
-enum class LayoutType : uint8_t {
-  INTERLEAVE = 0,
-  B128 = 1,
-  B64 = 2,
-  B32 = 3,
-};
-
-CUTE_HOST_DEVICE char const* to_string(LayoutType const& t) {
-  switch (t) {
-    case LayoutType::INTERLEAVE: return "INTERLEAVE";
-    case LayoutType::B128:       return "B128";
-    case LayoutType::B64:        return "B64";
-    case LayoutType::B32:        return "B32";
-  }
-  return nullptr;
-}
-
-#if !defined(__CUDACC_RTC__)
-// Output operator for all enums in this namespace
-CUTE_HOST std::ostream& operator<<(std::ostream& os, LayoutType const& t) {
-  char const* s = to_string(t);
-  if (s) {
-    std::operator<<(os, s);  // Explicit call to avoid ambiguity
-  } else {
-    os.setstate(std::ios_base::failbit);
-  }
-  return os;
-}
-#endif // !defined(__CUDACC_RTC__)
-
-} // end namespace AURORA::AMMA
-
-union AmmaDescriptor
-{
-  CUTE_HOST_DEVICE constexpr
-  AmmaDescriptor() noexcept : desc_(0) {}
-  CUTE_HOST_DEVICE constexpr
-  AmmaDescriptor(uint64_t desc) noexcept : desc_(desc) {}
-  CUTE_HOST_DEVICE constexpr
-  AmmaDescriptor(AmmaDescriptor const& t) noexcept : desc_(t.desc_) {}
-  CUTE_HOST_DEVICE constexpr
-  AmmaDescriptor(AmmaDescriptor && t) noexcept : desc_(t.desc_) {}
-
-  CUTE_HOST_DEVICE constexpr
-  AmmaDescriptor& operator=(AmmaDescriptor const& t) noexcept {
-    desc_ = t.desc_;
-    return *this;
-  }
-
-  CUTE_HOST_DEVICE constexpr
-  AmmaDescriptor& operator=(AmmaDescriptor && t) noexcept {
-    desc_ = t.desc_;
-    return *this;
-  }
-
-  uint64_t desc_;
-  uint32_t reg32_[2];
-  uint16_t reg16_[4];
-
-  // Bitfield implementation avoids the need for shifts in assignment
-  struct {
-    // start_address, bit [0,14), 4LSB not included
-    uint16_t start_address_ : 14, : 2;        // 14 bits [0,14), 2 bits unused
-    // leading dimension byte offset, bit [16,30), 4LSB not included
-    // For N: This is the stride from the first col to the second col of the 8x2 brick in INTERLEAVED
-    //   Unused for all SWIZZLE_* layouts (and assumed to be 1)
-    // For T: This is the stride from the first 8 rows to the next 8 rows.
-    uint16_t leading_byte_offset_ : 14, : 2;  // 14 bits [0,14), 2 bits unused
-    // stride dimension byte offset, bit [32,46), 4LSB not included
-    // For N: This is the stride from the first 8 rows to the next 8 rows.
-    // For T: This is the stride fro mthe first 8 cols to the next 8 cols.
-    uint16_t stride_byte_offset_ : 14, : 2;   // 14 bits [0,14), 2 bits unused
-    // base_offset, bit [49,52)
-    // Valid only for SWIZZLE_128B and SWIZZLE_64B
-    uint8_t : 1, base_offset_ : 3, : 4;       // 1 bit unused, 3 bits [1,4), 4 bits unused
-    // layout type, bit [62,64)
-    // SWIZZLE_NONE = 0, SWIZZLE_32B = 3, SWIZZLE_64B = 2, SWIZZLE_128B = 1
-    uint8_t : 6, layout_type_ : 2;            // 6 bits unused, 2 bits [6,8)
-  } bitfield;
-
-  // Decay to a uint64_t
-  CUTE_HOST_DEVICE constexpr
-  operator uint64_t() const noexcept { return desc_; }
-};
-
-// Printer
-CUTE_HOST_DEVICE void
-print(AmmaDescriptor const& t)
-{
-#if !defined(__CUDACC_RTC__)
-  printf("AmmaDescriptor: 0x%016llx\n",   static_cast<unsigned long long>(t.desc_));
-  printf("  start_addr :  0x%04x\n",      t.bitfield.start_address_);
-  printf("  leading_off:  0x%04x (%d)\n", t.bitfield.leading_byte_offset_, t.bitfield.leading_byte_offset_);
-  printf("  stride_off :  0x%04x (%d)\n", t.bitfield.stride_byte_offset_, t.bitfield.stride_byte_offset_);
-  printf("  base_offset:  0x%01x\n",      t.bitfield.base_offset_);
-  printf("  layout_type:  0x%01x (%s)\n", t.bitfield.layout_type_, to_string(static_cast<AURORA::AMMA::LayoutType>(t.bitfield.layout_type_)));
-#endif // !defined(__CUDACC_RTC__)
-}
-
-////////////////////////////////////////////////////////////////////////////////////////////////////
-
-} // namespace cute
-
-////////////////////////////////////////////////////////////////////////////////////////////////////
+ #include <cute/config.hpp>
+ 
+ #include <cute/arch/mma.hpp>
+ 
+ // Config
+ #if (defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 900) && defined(__CUDA_ARCH_FEAT_SM90_ALL))
+ #    define CUTE_ARCH_MMA_SM90A_ENABLED
+ #endif
+ 
+ ////////////////////////////////////////////////////////////////////////////////////////////////////
+ 
+ namespace cute {
+ 
+ ////////////////////////////////////////////////////////////////////////////////////////////////////
+ // Amma Descriptor and utilities
+ 
+ // Amma enums and utilities
+ namespace AURORA::AMMA {
+ 
+ enum class LayoutType : uint8_t {
+   INTERLEAVE = 0,
+   B128 = 1,
+   B64 = 2,
+   B32 = 3,
+ };
+ 
+ CUTE_HOST_DEVICE char const* to_string(LayoutType const& t) {
+   switch (t) {
+     case LayoutType::INTERLEAVE: return "INTERLEAVE";
+     case LayoutType::B128:       return "B128";
+     case LayoutType::B64:        return "B64";
+     case LayoutType::B32:        return "B32";
+   }
+   return nullptr;
+ }
+ 
+ #if !defined(__CUDACC_RTC__)
+ // Output operator for all enums in this namespace
+ CUTE_HOST std::ostream& operator<<(std::ostream& os, LayoutType const& t) {
+   char const* s = to_string(t);
+   if (s) {
+     std::operator<<(os, s);  // Explicit call to avoid ambiguity
+   } else {
+     os.setstate(std::ios_base::failbit);
+   }
+   return os;
+ }
+ #endif // !defined(__CUDACC_RTC__)
+ 
+ } // end namespace AURORA::AMMA
+ 
+ union AmmaDescriptor
+ {
+   CUTE_HOST_DEVICE constexpr
+   AmmaDescriptor() noexcept : desc_(0) {}
+   CUTE_HOST_DEVICE constexpr
+   AmmaDescriptor(uint64_t desc) noexcept : desc_(desc) {}
+   CUTE_HOST_DEVICE constexpr
+   AmmaDescriptor(AmmaDescriptor const& t) noexcept : desc_(t.desc_) {}
+   CUTE_HOST_DEVICE constexpr
+   AmmaDescriptor(AmmaDescriptor && t) noexcept : desc_(t.desc_) {}
+ 
+   CUTE_HOST_DEVICE constexpr
+   AmmaDescriptor& operator=(AmmaDescriptor const& t) noexcept {
+     desc_ = t.desc_;
+     return *this;
+   }
+ 
+   CUTE_HOST_DEVICE constexpr
+   AmmaDescriptor& operator=(AmmaDescriptor && t) noexcept {
+     desc_ = t.desc_;
+     return *this;
+   }
+ 
+   uint64_t desc_;
+   uint32_t reg32_[2];
+   uint16_t reg16_[4];
+ 
+   // Bitfield implementation avoids the need for shifts in assignment
+   struct {
+     // start_address, bit [0,14), 4LSB not included
+     uint16_t start_address_ : 14, : 2;        // 14 bits [0,14), 2 bits unused
+     // leading dimension byte offset, bit [16,30), 4LSB not included
+     // For N: This is the stride from the first col to the second col of the 8x2 brick in INTERLEAVED
+     //   Unused for all SWIZZLE_* layouts (and assumed to be 1)
+     // For T: This is the stride from the first 8 rows to the next 8 rows.
+     uint16_t leading_byte_offset_ : 14, : 2;  // 14 bits [0,14), 2 bits unused
+     // stride dimension byte offset, bit [32,46), 4LSB not included
+     // For N: This is the stride from the first 8 rows to the next 8 rows.
+     // For T: This is the stride fro mthe first 8 cols to the next 8 cols.
+     uint16_t stride_byte_offset_ : 14, : 2;   // 14 bits [0,14), 2 bits unused
+     // base_offset, bit [49,52)
+     // Valid only for SWIZZLE_128B and SWIZZLE_64B
+     uint8_t : 1, base_offset_ : 3, : 4;       // 1 bit unused, 3 bits [1,4), 4 bits unused
+     // layout type, bit [62,64)
+     // SWIZZLE_NONE = 0, SWIZZLE_32B = 3, SWIZZLE_64B = 2, SWIZZLE_128B = 1
+     uint8_t : 6, layout_type_ : 2;            // 6 bits unused, 2 bits [6,8)
+   } bitfield;
+ 
+   // Decay to a uint64_t
+   CUTE_HOST_DEVICE constexpr
+   operator uint64_t() const noexcept { return desc_; }
+ };
+ 
+ struct DMDescriptor{
+   uint32_t shape0;          //M for matrix A, N for matrix B
+   uint32_t shape1;          //K for matrix A and matrix B
+ 
+   uint64_t dm_addr;         //addr of DM
+ 
+   CUTE_HOST_DEVICE constexpr
+   DMDescriptor() noexcept : shape0(0), shape1(0), dm_addr(0) {}
+   CUTE_HOST_DEVICE constexpr
+   DMDescriptor(uint32_t s0, uint32_t s1, uint64_t dm) noexcept : shape0(s0), shape1(s1), dm_addr(dm) {}
+   CUTE_HOST_DEVICE constexpr
+   DMDescriptor(DMDescriptor const& t) noexcept : shape0(t.shape0), shape1(t.shape1), dm_addr(t.dm_addr) {}
+   CUTE_HOST_DEVICE constexpr
+   DMDescriptor(DMDescriptor && t) noexcept : shape0(t.shape0), shape1(t.shape1), dm_addr(t.dm_addr) {}
+   
+ 
+   CUTE_HOST_DEVICE constexpr
+   DMDescriptor& operator=(DMDescriptor const& t) noexcept {
+     shape0 = t.shape0;
+     shape1 = t.shape1;
+     dm_addr = t.dm_addr;
+     return *this;
+   }
+ 
+   CUTE_HOST_DEVICE constexpr
+   DMDescriptor& operator=(DMDescriptor && t) noexcept {
+     shape0 = t.shape0;
+     shape1 = t.shape1;
+     dm_addr = t.dm_addr;
+     return *this;
+   }
+ 
+   CUTE_HOST_DEVICE constexpr DMDescriptor& operator+=(uint64_t const& t) noexcept {
+     dm_addr += t;
+     return *this;
+   }
+ };
+ 
+ CUTE_HOST_DEVICE constexpr
+ DMDescriptor operator+(DMDescriptor const& lhs, uint64_t rhs) noexcept {
+   return DMDescriptor(lhs.shape0, lhs.shape1, lhs.dm_addr + rhs);
+ }
+ 
+ CUTE_HOST_DEVICE void
+ print(DMDescriptor const& t)
+ {
+ #if !defined(__CUDACC_RTC__)
+   printf("DMDescriptor:\n");
+   printf("  shape0 :  %u\n",      t.shape0);
+   printf("  shape1 :  %u\n",      t.shape1);
+   printf("  dm_addr:  0x%llx\n",   t.dm_addr);
+ #endif // !defined(__CUDACC_RTC__)
+ }
+ 
+ // Printer
+ CUTE_HOST_DEVICE void
+ print(AmmaDescriptor const& t)
+ {
+ #if !defined(__CUDACC_RTC__)
+   printf("AmmaDescriptor: 0x%016llx\n",   static_cast<unsigned long long>(t.desc_));
+   printf("  start_addr :  0x%04x\n",      t.bitfield.start_address_);
+   printf("  leading_off:  0x%04x (%d)\n", t.bitfield.leading_byte_offset_, t.bitfield.leading_byte_offset_);
+   printf("  stride_off :  0x%04x (%d)\n", t.bitfield.stride_byte_offset_, t.bitfield.stride_byte_offset_);
+   printf("  base_offset:  0x%01x\n",      t.bitfield.base_offset_);
+   printf("  layout_type:  0x%01x (%s)\n", t.bitfield.layout_type_, to_string(static_cast<AURORA::AMMA::LayoutType>(t.bitfield.layout_type_)));
+ #endif // !defined(__CUDACC_RTC__)
+ }
+ 
+ ////////////////////////////////////////////////////////////////////////////////////////////////////
+ 
+ } // namespace cute
+ 
+ ////////////////////////////////////////////////////////////////////////////////////////////////////
+ 

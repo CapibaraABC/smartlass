@@ -539,6 +539,7 @@ struct MMA_Traits<Aurora_64x64x16_F16F16F16_SS<tnspA, tnspB, scaleA, scaleB>>
 
   using Split_MNK = decltype(make_tuple(Int<4>{}, Int<1>{}, Int<1>{}));
   using AuroraThrLayout_MNK = Layout<Shape<_4, _1, _1>>;
+  // using AuroraThrLayout_MNK = Layout<Shape<_2, _2, _1>>;
 
   AMMA::ScaleOut accumulate_ = AMMA::ScaleOut::One;
 };

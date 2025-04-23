@@ -295,17 +295,25 @@ gemm(MMA_Atom<MMA>       const& mma,
       CUTE_UNROLL
       for (int n = 0; n < N; ++n) {
         int ns = (m & 1) ? N-1-n : n;  // Serpentine coordinate
-        gemm(mma, D(_,m,ns), A(_,m), B(_,ns), C(_,m,ns));
         if(thread0()&&blockIdx.x == 0 && blockIdx.y == 0){
           using ShapeMNK = typename MMA_Atom<MMA>::Shape_MNK; 
           ShapeMNK shape; 
           uint32_t msize = size<0>(shape);
           uint32_t nsize = size<1>(shape);
           uint32_t ksize = size<2>(shape);
+
+          using ADesc = remove_cvref_t<decltype(A.data())>;
+          if constexpr (is_same<ADesc, cute::AURORA::AMMA::DMDescriptorIterator>::value){
+            msize = A.data().desc_.shape0;
+            nsize = B.data().desc_.shape0;
+            ksize = A.data().desc_.shape1;
+          }
+          
           printf("==== MMA_Atom# Shape       : %u, %u, %u\n", msize, nsize, ksize);
           printf("==== MMA_Atom# loop        : (%d,%d) @_[%d]_[%d]\n", (int)M, (int)N, (int)(m), (int)(ns));
           printf("==== MMA_Atom# Smem C.coord: (%d,%d)\n", (int)(m*msize), (int)(ns*nsize));
         }
+        gemm(mma, D(_,m,ns), A(_,m), B(_,ns), C(_,m,ns));
       }
     }
 #else
@@ -331,6 +339,13 @@ gemm(MMA_Atom<MMA>       const& mma,
     uint32_t msize = size<0>(shape);
     uint32_t nsize = size<1>(shape);
     uint32_t ksize = size<2>(shape);
+
+    using ADesc = remove_cvref_t<decltype(A.data())>;
+    if constexpr (is_same<ADesc, cute::AURORA::AMMA::DMDescriptorIterator>::value){
+      msize = A.data().desc_.shape0;
+      nsize = B.data().desc_.shape0;
+      ksize = A.data().desc_.shape1;
+    }
     
     CUTE_UNROLL
     for (int m = 0; m < M; m += 2) {
@@ -387,6 +402,13 @@ gemm(MMA_Atom<MMA>       const& mma,
           uint32_t msize = size<0>(shape);
           uint32_t nsize = size<1>(shape);
           uint32_t ksize = size<2>(shape);
+
+          using ADesc = remove_cvref_t<decltype(A.data())>;
+          if constexpr (is_same<ADesc, cute::AURORA::AMMA::DMDescriptorIterator>::value){
+            msize = A.data().desc_.shape0;
+            nsize = B.data().desc_.shape0;
+            ksize = A.data().desc_.shape1;
+          }
           printf("==== MMA_Atom# Shape       : %u, %u, %u\n", msize, nsize, ksize);
           printf("==== MMA_Atom# loop        : (%d,%d) @_[%d]_[%d]\n", (int)M, (int)N, (int)(m), (int)(ns));
           printf("==== MMA_Atom# Smem C.coord: (%d,%d)\n", (int)(m*msize), (int)(ns*nsize));
@@ -410,6 +432,14 @@ gemm(MMA_Atom<MMA>       const& mma,
           uint32_t msize = size<0>(shape);
           uint32_t nsize = size<1>(shape);
           uint32_t ksize = size<2>(shape);
+
+          using ADesc = remove_cvref_t<decltype(A.data())>;
+          if constexpr (is_same<ADesc, cute::AURORA::AMMA::DMDescriptorIterator>::value){
+            msize = A.data().desc_.shape0;
+            nsize = B.data().desc_.shape0;
+            ksize = A.data().desc_.shape1;
+          }
+          
           printf("==== MMA_Atom# Shape       : %u, %u, %u\n", msize, nsize, ksize);
           printf("==== MMA_Atom# loop        : (%d,%d) @_[%d]_[%d]\n", (int)M, (int)N, (int)(ms), (int)(n));
           printf("==== MMA_Atom# Smem C.coord: (%d,%d)\n", (int)(ms*msize), (int)(n*nsize));
@@ -432,6 +462,13 @@ gemm(MMA_Atom<MMA>       const& mma,
           uint32_t msize = size<0>(shape);
           uint32_t nsize = size<1>(shape);
           uint32_t ksize = size<2>(shape);
+
+          using ADesc = remove_cvref_t<decltype(A.data())>;
+          if constexpr (is_same<ADesc, cute::AURORA::AMMA::DMDescriptorIterator>::value){
+            msize = A.data().desc_.shape0;
+            nsize = B.data().desc_.shape0;
+            ksize = A.data().desc_.shape1;
+          }
           printf("==== MMA_Atom# Shape       : %u, %u, %u\n", msize, nsize, ksize);
           printf("==== MMA_Atom# loop        : (%d,%d) @_[%d]_[%d]\n", (int)M, (int)N, (int)(ms), (int)(n));
           printf("==== MMA_Atom# Smem C.coord: (%d,%d)\n", (int)(ms*msize), (int)(n*nsize));

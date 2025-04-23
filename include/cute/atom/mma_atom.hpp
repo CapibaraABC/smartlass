@@ -71,6 +71,7 @@ struct MMA_Atom<MMA_Traits<MMAOperation, Args...>>
   using FrgTypeA = typename detail::FrgTypeA_or_Default<Traits>::type;
   using FrgTypeB = typename detail::FrgTypeB_or_Default<Traits>::type;
   using FrgTypeC = typename detail::FrgTypeC_or_Default<Traits>::type;
+  using AuroraFrgTypeC = typename detail::AuroraFrgTypeC_or_Default<Traits>::type;
 
   // Additional Trait parameters/transformations
   template <class... TraitsArgs>
@@ -102,8 +103,9 @@ struct MMA_Atom<MMA_Traits<MMAOperation, Args...>>
     static_assert(BLayout::rank == 1, "Expected rank-1 B tensor");
     static_assert(CLayout::rank == 1, "Expected rank-1 C tensor");
 
-    return mma_unpack(static_cast<Traits const&>(*this), D, A, B, C);
+    // return mma_unpack(static_cast<Traits const&>(*this), D, A, B, C);
     // return mma_spu_unpack(static_cast<Traits const&>(*this), D, A, B, C);     //call spu with dm_descriptor
+    return mma_unpack_dispatch(static_cast<Traits const&>(*this), D, A, B, C);
   }
 
   // Three arguments reproduces C
@@ -142,6 +144,40 @@ struct MMA_Atom<MMA_Traits<MMAOperation, Args...>>
 
     // We'll never base the accumulator layout on the input tensor layout, so just return a FrgTypeC tensor
     return make_tensor<FrgTypeC>(shape(ctensor));
+  }
+
+  template <class CTensor>
+  CUTE_HOST_DEVICE static constexpr
+  auto
+  make_fragment_C_new(CTensor&& ctensor)
+  {
+    // Check that this tensor is likely already partitioned
+    // CUTE_STATIC_ASSERT_V(rank(ctensor) >= Int<3>{});  // VMN
+    // CUTE_STATIC_ASSERT_V(size<0>(ctensor) == size<1>(LayoutC_TV{}));
+    // C is a bit special because we are after accumulators here
+    // The input/output type doesn't have to match the accumulator type
+    if constexpr (has_dereference<AuroraFrgTypeC>::value) {
+      // If the intended FrgTypeC is a view (of the current tensor), forward the whole
+      static_assert(is_same<ValTypeC, typename remove_cvref_t<CTensor>::value_type>::value
+                        
+                        || (sizeof_bits_v<typename remove_cvref_t<CTensor>::value_type> == 8 &&
+                            (sizeof_bits_v<ValTypeC> == 8 || sizeof_bits_v<ValTypeC> == 6 || sizeof_bits_v<ValTypeC> == 4))
+                      , "Expecting ValTypeC type");
+#if 1
+    if(thread0()){
+      auto Ac = AuroraFrgTypeC{};
+      print("in make_fragment_C_v2.\n");
+      print("ctensor:");print(ctensor);print("\n");
+      print("Ac:");print(Ac);print("\n");
+    }                    
+#endif
+      return make_tensor<AuroraFrgTypeC>(static_cast<CTensor&&>(ctensor));
+    } else {
+      // Else, the intended FrgTypeC is a value type, construct a new tensor with a fragment layout
+      return make_fragment_like<AuroraFrgTypeC>(ctensor);
+    }
+
+    CUTE_GCC_UNREACHABLE;
   }
 
   template <class ATensor>
@@ -220,28 +256,35 @@ struct TiledMMA : MMA_Atom
   using AtomLayoutA_TV = typename MMA_Atom::LayoutA_TV;
   using AtomLayoutB_TV = typename MMA_Atom::LayoutB_TV;
   using AtomAuroraThrLayout_MNK = typename MMA_Atom::AuroraThrLayout_MNK;
+  using AtomAuroraDMLayout_MN = typename MMA_Atom::AuroraDMLayout_MN;
+  
 
   static_assert(   rank_v<AtomLayoutMNK>  == 3,   "TiledMMA requires rank-3 AtomLayoutMNK");
   static_assert(   rank_v<PermutationMNK> == 3,   "TiledMMA requires rank-3 PermutationMNK");
   static_assert( is_tuple<PermutationMNK>::value, "TiledMMA requires independent permutations of MNK.");
   static_assert(is_static<PermutationMNK>::value, "TiledMMA requires static permutations of MNK.");
 
-  // using ThrLayoutVMNK = decltype(tiled_product(AtomThrID{}, AtomLayoutMNK{}));
-  // ThrLayoutVMNK thr_layout_vmnk_;
+  using ThrLayoutVMNK = decltype(tiled_product(AtomThrID{}, AtomLayoutMNK{}));
+  ThrLayoutVMNK thr_layout_vmnk_;
 
   //get thread layout vmnk, and v always be 1. MNK represents APE layout N*N*K
-  using ThrLayoutVMNK = decltype(tiled_product(AtomThrID{}, AtomAuroraThrLayout_MNK{}));
-  ThrLayoutVMNK thr_layout_vmnk_;
+  using AuroraThrLayoutVMNK = decltype(tiled_product(AtomThrID{}, AtomAuroraThrLayout_MNK{}));
+  AuroraThrLayoutVMNK aurora_thr_layout_vmnk_;
 
   CUTE_HOST_DEVICE constexpr
   TiledMMA(MMA_Atom const& mma_atom = {}, AtomLayoutMNK const& thr_layout_mnk = {})
     : MMA_Atom(mma_atom),
-      // thr_layout_vmnk_(tiled_product(AtomThrID{}, thr_layout_mnk)) {}
-      thr_layout_vmnk_(tiled_product(AtomThrID{}, AtomAuroraThrLayout_MNK{})) {}
+      thr_layout_vmnk_(tiled_product(AtomThrID{}, thr_layout_mnk)),
+      aurora_thr_layout_vmnk_(tiled_product(AtomThrID{}, AtomAuroraThrLayout_MNK{})) {}
 
   CUTE_HOST_DEVICE constexpr auto
   get_thr_layout_vmnk() const {
     return thr_layout_vmnk_;
+  }
+
+  CUTE_HOST_DEVICE constexpr auto
+  get_thr_layout_vmnk_new() const {
+    return aurora_thr_layout_vmnk_;
   }
 
   // Tile a tensor or a layout from shape
@@ -435,9 +478,49 @@ struct TiledMMA : MMA_Atom
             __CUTE_REQUIRES(is_integral<ThrIdx>::value)>
   CUTE_HOST_DEVICE constexpr
   auto
+  get_slice_new(ThrIdx const& thr_idx) const
+  {
+    auto aurora_thr_vmnk = aurora_thr_layout_vmnk_.get_flat_coord(thr_idx);
+#if 0
+    if(blockIdx.x == 0 && blockIdx.y == 0 && blockIdx.z == 0 &&
+      threadIdx.x == 1 && threadIdx.y == 1 && threadIdx.z == 0){
+      print("in get_slice_new:\n");
+      printf("thread coord:(%d, %d, %d)", threadIdx.x, threadIdx.y, threadIdx.z);print("\n");
+      print("aurora_thr_layout_vmnk_:");print(aurora_thr_layout_vmnk_);print("\n");
+      print("aurora_thr_vmnk:");print(aurora_thr_vmnk);print("\n");
+      
+      print("\n\n");
+    }
+
+    if(blockIdx.x == 0 && blockIdx.y == 0 && blockIdx.z == 0 &&
+      threadIdx.x == 0 && threadIdx.y == 0 && threadIdx.z == 0){
+      print("in get_slice_new:\n");
+      printf("thread coord:(%d, %d, %d)", threadIdx.x, threadIdx.y, threadIdx.z);print("\n");
+      print("aurora_thr_layout_vmnk_:");print(aurora_thr_layout_vmnk_);print("\n");
+      print("aurora_thr_vmnk:");print(aurora_thr_vmnk);print("\n");
+      
+      print("\n\n");
+    }
+#endif
+    return ThrMMA<TiledMMA, decltype(aurora_thr_vmnk)>{*this, aurora_thr_vmnk};
+  }
+
+  template <class ThrIdx,
+            __CUTE_REQUIRES(is_integral<ThrIdx>::value)>
+  CUTE_HOST_DEVICE constexpr
+  auto
   get_thread_slice(ThrIdx const& thr_idx) const
   {
     return get_slice(thr_idx);
+  }
+
+  template <class ThrIdx,
+            __CUTE_REQUIRES(is_integral<ThrIdx>::value)>
+  CUTE_HOST_DEVICE constexpr
+  auto
+  get_thread_slice_new(ThrIdx const& thr_idx) const
+  {
+    return get_slice_new(thr_idx);
   }
 
   //
@@ -576,6 +659,23 @@ struct TiledMMA : MMA_Atom
 
   //////new APIs for aurora/////
 
+  template <class Shape>
+  CUTE_HOST_DEVICE constexpr
+  auto tile_to_dm_shape(Shape const& trg_shape)
+  {
+    auto main_shape = make_shape(get<0>(trg_shape),get<1>(trg_shape));
+    auto intermedia_layout = AtomAuroraDMLayout_MN{};
+    auto begin_layout = make_ordered_layout(ceil_div(main_shape, shape(intermedia_layout)), Step<_1, _0>{});
+    
+
+    auto pipeline_stride = max(transform(zip(shape(intermedia_layout), stride(intermedia_layout)), [](auto p) {
+      return get<0>(p) * get<1>(p);
+    }));
+    auto final_layout = make_layout(get<2>(trg_shape), pipeline_stride);
+
+    return make_layout(begin_layout, intermedia_layout, final_layout);
+  }
+
   /**
    * split (bM, bN) into (bM/m, bN/n),(m,n)
    */
@@ -675,6 +775,47 @@ struct ThrMMA : TiledMMA
 
       auto md = make_coord(thr_mn, _);
       print("md:");print(md);print("\n");
+
+      print("\n\n");
+    }
+#endif
+
+    // return ctensor;
+    return res_test;
+  }
+
+  //only slice C according to coordination of the current APE
+  //do not split C
+  template <class CTensor>
+  CUTE_HOST_DEVICE constexpr
+  auto
+  aurora_partition_C_v3(CTensor&& ctensor) const
+  {
+    // auto target_tensor = make_layout(
+    //       make_shape(make_shape(_64{}, _64{}), make_shape(_2{}, _2{}), _2{}),
+    //       make_stride(make_stride(_1{}, _64{}), make_stride(_65536{}, _131072{}), _262144{})
+    //   );
+    auto target_tensor = ctensor;
+    auto help_layout = make_layout(make_shape(_1{}, _1{}), make_stride(_0{}, _0{}));
+    auto res_layout = make_layout(get<1>(target_tensor.layout()), 
+                  get<0>(target_tensor.layout()), 
+                  get<0>(help_layout),
+                  get<1>(help_layout),
+                  get<2>(target_tensor.layout()));
+    //Sw<3,4,3>_smem_ptr[16b](0x7ba700000400) o ((_64,_64),_1,_1,_2):((_1,_64),_0,_0,_262144)             
+    auto res_tensor = make_tensor(static_cast<CTensor&&>(ctensor).data(), res_layout);
+
+    auto thr_mn = make_coord(get<1>(thr_vmnk_), get<2>(thr_vmnk_));
+    auto res_test = res_tensor(make_coord(thr_mn, _, _, _, _));
+    
+
+#if 0
+    if(thread0()){
+      print("in aurora_partition_C_v2:\n");
+      print("ctensor:");print(ctensor);print("\n");
+      print("res_tensor:");print(res_tensor);print("\n");
+      print("thr_mn:");print(thr_mn);print("\n");
+      print("res_test:");print(res_test);print("\n");
 
       print("\n\n");
     }
@@ -894,12 +1035,13 @@ partition_shape_B(TiledMMA<Args...> const& mma, Shape_NK const& shape_NK)
  * auto ape_shape = get_ape_shape_mnk(tiled_mma);
  * dim3 dimBlock(get<0>(ape_shape), get<1>(ape_shape), get<2>(ape_shape));
  */
+
 template <class... Args>
 CUTE_HOST_DEVICE constexpr
 auto
 get_ape_shape_mnk(TiledMMA<Args...> const& mma)
 {
-  auto vmnk = shape(mma.get_thr_layout_vmnk());
+  auto vmnk = shape(mma.get_thr_layout_vmnk_new());
   auto ape_mnk = make_shape(
           get<1>(vmnk),
           get<2>(vmnk),
@@ -917,7 +1059,7 @@ CUTE_HOST_DEVICE constexpr
 auto
 get_ape_dim_mnk(TiledMMA<Args...> const& mma)
 {
-  auto vmnk = shape(mma.get_thr_layout_vmnk());
+  auto vmnk = shape(mma.get_thr_layout_vmnk_new());
   auto ape_mnk = make_shape(
           get<1>(vmnk),
           get<2>(vmnk),

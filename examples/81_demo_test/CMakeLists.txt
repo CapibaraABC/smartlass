@@ -44,8 +44,12 @@ cutlass_example_add_executable(
   )
 
 
-# cutlass_example_add_executable(
-#   tmp_comp
-#   tmp_comp.cu
-#   )
+cutlass_example_add_executable(
+  apc_mma_demo
+  apc_mma_demo.cu
+  )
 
+cutlass_example_add_executable(
+  apc_demo
+  apc_demo.cu
+  )

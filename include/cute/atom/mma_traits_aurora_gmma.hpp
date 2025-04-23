@@ -497,8 +497,10 @@ struct MakeTensor<AURORA::AMMA::dm_desc<MajorMode>>
       print("dm_desc_iter:");print(dm_desc_iter);print("\n");
     }
 #endif
+    // return make_tensor(AURORA::AMMA::DMDescriptorIterator{AURORA::AMMA::aurora_make_dm_desc<MajorMode>(tensor<0>(smem_tensor))},
+    //                                               replace<0>(recast<uint128_t const>(smem_tensor).layout(), Layout<_1,_0>{}));
     return make_tensor(AURORA::AMMA::DMDescriptorIterator{AURORA::AMMA::aurora_make_dm_desc<MajorMode>(tensor<0>(smem_tensor))},
-                                                  replace<0>(recast<uint128_t const>(smem_tensor).layout(), Layout<_1,_0>{}));
+                                                  replace<0>(recast<uint8_t const>(smem_tensor).layout(), Layout<_1,_0>{}));
   }
 };
 
@@ -507,6 +509,48 @@ struct MakeTensor<AURORA::AMMA::dm_desc<MajorMode>>
 ///////////////////////////////////////////////////////////////////////////////
 
 namespace AURORA::AMMA {
+
+  template <typename T>
+  struct always_false : std::false_type {};
+  
+  //dispatch mma_unpack API to suitable mma_unpack version with gmma_desc and dm_desc
+    template <class MMA_Op, class... MMA_Args,
+    class TD, class DLayout,
+    class TA, class ALayout,
+    class TB, class BLayout,
+    class TC, class CLayout>
+  CUTE_HOST_DEVICE constexpr
+  void
+  mma_unpack_dispatch(MMA_Traits<MMA_Op, MMA_Args...> const& traits,
+     Tensor<TD, DLayout>      & D,
+     Tensor<TA, ALayout> const& A,
+     Tensor<TB, BLayout> const& B,
+     Tensor<TC, CLayout> const& C)
+  {
+    using ADesc = remove_cvref_t<decltype(A.data())>;
+    
+    if constexpr (is_same<ADesc, cute::AURORA::AMMA::DMDescriptorIterator>::value) {
+      //call mma_unpack suitable with DMDescriptorIterator
+      mma_spu_unpack(traits, D, A, B, C);
+    }
+    else if constexpr (is_same<ADesc, cute::AURORA::AMMA::DescriptorIterator>::value) {
+      //call mma_unpack suitable with DescriptorIterator
+      mma_unpack(traits, D, A, B, C);
+    }
+    else {
+      static_assert(always_false<ADesc>::value, "Unsupported A.data() type");
+    }
+  #if 0
+    if(thread0()){
+      auto judge = is_same<ADesc, cute::AURORA::AMMA::DMDescriptorIterator>::value;
+  
+      printf("in mma_unpack_dispatch.\n");
+      printf("judge:%d\n", (int)judge);
+    }
+  #endif
+  }
+
+
 
 //
 // Specialized mma_unpack implementation for SM90 GMMA instructions
@@ -625,10 +669,11 @@ mma_spu_unpack(MMA_Traits<MMA_Op, MMA_Args...> const& traits,
 
   uint64_t addressA = A.data().desc_.dm_addr;
   uint64_t addressB = B.data().desc_.dm_addr;
+  uint64_t addressC = C.data().desc_.dm_addr;
   
   auto MatrixA = reinterpret_cast<void*>(addressA);
   auto MatrixB = reinterpret_cast<void*>(addressB);
-  auto MatrixC = C.data();                           //C.data is the const cutlass::half_t* const type
+  auto MatrixC = reinterpret_cast<void*>(addressC);                     //C.data is the const cutlass::half_t* const type
 
 #if 0
   using cute::print;
@@ -644,7 +689,7 @@ mma_spu_unpack(MMA_Traits<MMA_Op, MMA_Args...> const& traits,
   detail::explode_tuple(MMA_Op::gemm_cal,
                         make_tuple(alpha), seq<0>{},
                         make_tuple(m, n, k), seq<0,1,2>{},
-                        make_tuple(MatrixA, MatrixB, (void*)MatrixC), seq<0,1,2>{}
+                        make_tuple(MatrixA, MatrixB, MatrixC), seq<0,1,2>{}
                         );
 }
 
@@ -724,6 +769,7 @@ struct MMA_Traits<Aurora_64x64x16_F16F16F16_SS<tnspA, tnspB, scaleA, scaleB>>
   using CLayout = AMMA::CLayout_64x64;
 
   using AuroraThrLayout_MNK = Layout<Shape<_4, _1, _1>>;
+  using AuroraDMLayout_MN = Layout<Shape<_4, _1>>;
 
   AMMA::ScaleOut accumulate_ = AMMA::ScaleOut::One;
 };
@@ -756,6 +802,7 @@ struct MMA_Traits<Aurora_128x128x128_F16F16F16_SS<tnspA, tnspB, scaleA, scaleB>>
   using CLayout = AMMA::CLayout_128x128;
 
   using AuroraThrLayout_MNK = Layout<Shape<_2, _2, _1>>;
+  using AuroraDMLayout_MN = Layout<Shape<_2, _2>, Stride<Int<131072>, Int<262144>>>;
 
   AMMA::ScaleOut accumulate_ = AMMA::ScaleOut::One;
 };
@@ -778,7 +825,8 @@ struct MMA_Traits<Aurora_128x128x128_F16F16F16_APELayoutM2N2K1_SS<tnspA, tnspB, 
 
   using FrgTypeA = AMMA::dm_desc<tnspA>;                //dm descriptor iterator
   using FrgTypeB = AMMA::dm_desc<tnspB>;
-
+  using AuroraFrgTypeC = AMMA::dm_desc<tnspA>;
+  
   using Shape_MNK = Shape<_128,_128,_128>;
   using ThrID   = Layout<_1>;                           //to calculate a mma_atom only needs 1 thread
   // using ThrID   = Layout<Shape<_2, _2, _1>>;
@@ -793,6 +841,7 @@ struct MMA_Traits<Aurora_128x128x128_F16F16F16_APELayoutM2N2K1_SS<tnspA, tnspB, 
    * 
    */
   using AuroraThrLayout_MNK = Layout<Shape<_2, _2, _1>>;   
+  using AuroraDMLayout_MN = Layout<Shape<_2, _2>, Stride<Int<131072>, Int<262144>>>;
 
   AMMA::ScaleOut accumulate_ = AMMA::ScaleOut::One;
 };
@@ -830,7 +879,7 @@ struct MMA_Traits<Aurora_128x128x128_F16F16F16_APELayoutM1N1K1_SS<tnspA, tnspB, 
    * 
    */
   using AuroraThrLayout_MNK = Layout<Shape<_1, _1, _1>>;   
-
+  using AuroraDMLayout_MN = Layout<Shape<_1, _1>>;
   AMMA::ScaleOut accumulate_ = AMMA::ScaleOut::One;
 };
 ////////////////////////////////////////////////////////////////////////////////////////////////////

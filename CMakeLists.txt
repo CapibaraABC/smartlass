@@ -1100,6 +1100,7 @@ if (CUTLASS_ENABLE_TESTS)
 endif()
 
 if (CUTLASS_ENABLE_SMARTLOG)
+  option(SPDLOG_TIDY "run clang-tidy" OFF)
   add_subdirectory(third_party/smartlog)
   target_link_libraries(CUTLASS INTERFACE spdlog::spdlog)
 endif()

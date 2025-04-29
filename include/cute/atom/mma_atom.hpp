@@ -163,7 +163,7 @@ struct MMA_Atom<MMA_Traits<MMAOperation, Args...>>
                         || (sizeof_bits_v<typename remove_cvref_t<CTensor>::value_type> == 8 &&
                             (sizeof_bits_v<ValTypeC> == 8 || sizeof_bits_v<ValTypeC> == 6 || sizeof_bits_v<ValTypeC> == 4))
                       , "Expecting ValTypeC type");
-#if 1
+#if 0
     if(thread0()){
       auto Ac = AuroraFrgTypeC{};
       print("in make_fragment_C_v2.\n");
@@ -365,6 +365,70 @@ struct TiledMMA : MMA_Atom
     return split_tensor;
   }
 
+  /**
+   * split input tensor acoording to (atomM, atomN) or nor.
+   * 1 if problem shape in DM <= (atomM, atomN), we do not split, and the res is ((thrM, thrN), (probM, probN), _1, _1, (PIPE))
+   * 2 if problem shape in DM > (atomM, atomN), we split atensor into ((thrM, thrN), (atomM, atomN), restM, restN, (PIPE))
+   */
+  template <class CTensor>
+  CUTE_HOST_DEVICE constexpr
+  auto
+  aurora_thrfrg_C_split(CTensor&& ctensor) const
+  {
+    CUTE_STATIC_ASSERT_V(rank(ctensor) >= Int<2>{});
+    auto atomM = size<0>(AtomShape_MNK{});
+    auto atomN = size<1>(AtomShape_MNK{});
+    auto original_m = size<0,0>(shape(ctensor));
+    auto original_n = size<0,1>(shape(ctensor));
+    
+    //(original_m, original_n) (atomM, atomN) should satisfy the following 2 conditions
+    static_assert(!(original_m > atomM && original_n < atomN), "Condition: original_m > atomM and original_n < atomN is invalid");
+    static_assert(!(original_m < atomM && original_n > atomN), "Condition: original_m < atomM and original_n > atomN is invalid");
+    
+    //split original problem according to mma_atom only if (original_m, original_n) > (atomM, atomN)
+    using TileType = std::conditional_t<
+            (original_m <= atomM && original_n <= atomN),
+            decltype(make_tile(original_m, original_n)),
+            decltype(make_tile(atomM, atomN))
+        >;
+    TileType t_tile;
+
+    auto t_tensor = zipped_divide(get<0>(ctensor), t_tile);                
+    //adjust
+    auto inter_tensor = replace<0>(ctensor, t_tensor);
+
+    //flatten coord
+    auto flat_coord = flatten(get<0,1>(inter_tensor));
+
+    auto thr_layout_tensor = get<1>(inter_tensor);    //(ThrM, ThrN)
+    static_assert(shape(thr_layout_tensor) == shape(select<0,1>(AtomAuroraThrLayout_MNK{})), "(ThrM, ThrN) in ctensor must be equal with (M,N) in AtomAuroraThrLayout_MNK.");
+    
+    auto atom_tensor = get<0,0>(inter_tensor);
+    auto atom_in_M = get<0>(flat_coord);
+    auto atom_in_N = get<1>(flat_coord);
+    auto pipeline_tensor = get<2>(inter_tensor);
+
+    //composition
+    auto thr_tensor = make_layout(thr_layout_tensor, atom_tensor, atom_in_M, atom_in_N, pipeline_tensor);
+
+#if 0
+    if(thread0()){
+      print("\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\n");
+      print("aurora_thrfrag_A_split:\n");
+      print("original_m:");print(original_m);print("\n");
+      print("original_n:");print(original_n);print("\n");
+      print("ctensor:");print(ctensor);print("\n");
+      print("t_tile:");print(t_tile);print("\n");
+      print("t_tensor:");print(t_tensor);print("\n");
+      print("inter_tensor:");print(inter_tensor);print("\n");
+      print("flat_coord:");print(flat_coord);print("\n");
+      print("thr_tensor:");print(thr_tensor);print("\n");
+      print("\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\n\n");
+    }
+#endif
+    return thr_tensor;
+  }
+
   // Tile a tensor or a layout from shape
   //   (M,K,...)
   // to shape
@@ -404,6 +468,78 @@ struct TiledMMA : MMA_Atom
     return thr_tensor;
   }
 
+  /**
+   * split input tensor acoording to (atomM, atomK) or nor.
+   * 1 if problem shape in DM <= (atomM, atomK), we do not split, and the res is ((thrM, thrK), (probM, probK), _1, _1, (PIPE))
+   * 2 if problem shape in DM > (atomM, atomK), we split atensor into ((thrM, thrK), (atomM, atomK), restM, restK, (PIPE))
+   */
+  template <class ATensor>
+  CUTE_HOST_DEVICE constexpr
+  auto
+  aurora_thrfrg_A_split(ATensor&& atensor) const
+  {
+    CUTE_STATIC_ASSERT_V(rank(atensor) >= Int<2>{});
+    auto atomM = size<0>(AtomShape_MNK{});
+    auto atomK = size<2>(AtomShape_MNK{});
+    auto original_m = size<0,0>(shape(atensor));
+    auto original_k = size<0,1>(shape(atensor));
+
+    //must satisfy the following 2 conditions
+    static_assert(!(original_m > atomM && original_k < atomK), "Condition: original_m > atomM and original_k < atomK is invalid");
+    static_assert(!(original_m < atomM && original_k > atomK), "Condition: original_m < atomM and original_k > atomK is invalid");
+    
+    using TileType = std::conditional_t<
+            (original_m <= atomM && original_k <= atomK),
+            decltype(make_tile(original_m, original_k)),
+            decltype(make_tile(atomM, atomK))
+        >;
+    TileType t_tile;
+  
+    auto t_tensor = zipped_divide(get<0>(atensor), t_tile);     //(atomM, atomK), (restM, restK)            
+
+    //adjust
+    auto inter_tensor = replace<0>(atensor, t_tensor);          //(((atomM, atomK), (restM, restK)), (ThrM, ThrK), (PIPE))
+
+    //flatten coord
+    auto flat_coord = flatten(get<0,1>(inter_tensor));         //(restM, restK)
+
+    
+    auto thr_layout_tensor = get<1>(inter_tensor);            //(ThrM, ThrK)
+    static_assert(shape(thr_layout_tensor) == shape(select<0,2>(AtomAuroraThrLayout_MNK{})), "(ThrM, ThrK) in atensor must be equal with (M,K) in AtomAuroraThrLayout_MNK.");
+    
+    auto atom_tensor = get<0,0>(inter_tensor);
+    auto atom_in_M = get<0>(flat_coord);
+    auto atom_in_K = get<1>(flat_coord);
+    auto pipeline_tensor = get<2>(inter_tensor);
+
+    //composition
+    auto thr_tensor = make_layout(thr_layout_tensor, atom_tensor, atom_in_M, atom_in_K, pipeline_tensor);
+
+#if 0
+    if(thread0()){
+      print("\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\n");
+      print("aurora_thrfrag_A_split:\n");
+      print("original_m:");print(original_m);print("\n");
+      print("original_k:");print(original_k);print("\n");
+      print("atensor:");print(atensor);print("\n");
+      print("t_tile:");print(t_tile);print("\n");
+      print("t_tensor:");print(t_tensor);print("\n");
+      print("inter_tensor:");print(inter_tensor);print("\n");
+      print("flat_coord:");print(flat_coord);print("\n");
+
+      print("thr_layout_tensor:");print(thr_layout_tensor);print("\n");
+      print("atom_tensor:");print(atom_tensor);print("\n");
+      print("atom_in_M:");print(atom_in_M);print("\n");
+      print("atom_in_K:");print(atom_in_K);print("\n");
+      print("pipeline_tensor:");print(pipeline_tensor);print("\n");
+
+      print("thr_tensor:");print(thr_tensor);print("\n"); //thr_tensor:((_1,(_4,_1)),((_64,_16),(_1,_1,_2))):((_0,(_64,_0)),((_1,_256),(_0,_0,_4096)))
+      print("\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\n\n");
+    }
+#endif
+    return thr_tensor;
+  }
+
   // Tile a tensor or a layout from shape
   //   (N,K,...)
   // to shape
@@ -440,6 +576,70 @@ struct TiledMMA : MMA_Atom
                                         make_layout(size<3>(thr_layout_vmnk_))));
     auto thr_tensor = zipped_divide(tv_tensor, thr_tile);            // ((ThrV,(ThrN,ThrK)),(FrgV,(RestN,RestK)))
 
+    return thr_tensor;
+  }
+
+  /**
+   * split input tensor acoording to (atomN, atomK) or nor.
+   * 1 if problem shape in DM <= (atomN, atomK), we do not split, and the res is ((thrN, thrK), (probN, probK), _1, _1, (PIPE))
+   * 2 if problem shape in DM > (atomN, atomK), we split atensor into ((thrN, thrK), (atomN, atomK), restN, restK, (PIPE))
+   */
+  template <class BTensor>
+  CUTE_HOST_DEVICE constexpr
+  auto
+  aurora_thrfrg_B_split(BTensor&& btensor) const
+  {
+    CUTE_STATIC_ASSERT_V(rank(btensor) >= Int<2>{});
+    auto atomN = size<1>(AtomShape_MNK{});
+    auto atomK = size<2>(AtomShape_MNK{});
+    auto original_n = size<0,0>(shape(btensor));
+    auto original_k = size<0,1>(shape(btensor));
+
+    //must satisfy the following 2 conditions
+    static_assert(!(original_n > atomN && original_k < atomK), "Condition: original_n > atomN and original_k < atomK is invalid");
+    static_assert(!(original_n < atomN && original_k > atomK), "Condition: original_n < atomN and original_k > atomK is invalid");
+    
+    //split original problem according to mma_atom only if (original_m, original_n) > (atomM, atomN)
+    using TileType = std::conditional_t<
+            (original_n <= atomN && original_k <= atomK),
+            decltype(make_tile(original_n, original_k)),
+            decltype(make_tile(atomN, atomK))
+        >;
+    TileType t_tile;
+
+    auto t_tensor = zipped_divide(get<0>(btensor), t_tile);             //((atomM, atomK), (restM, restK))     
+    //adjust
+    auto inter_tensor = replace<0>(btensor, t_tensor);                  //((atomM, atomK), (restM, restK)),(ThrM, ThrN),(PIPE)
+
+    //flatten coord
+    auto flat_coord = flatten(get<0,1>(inter_tensor));                 //(atomM, atomK)
+
+    auto thr_layout_tensor = get<1>(inter_tensor);                     //(ThrN, ThrK)
+    static_assert(shape(thr_layout_tensor) == shape(select<1,2>(AtomAuroraThrLayout_MNK{})), "(ThrN, ThrK) in btensor must be equal with (N,K) in AtomAuroraThrLayout_MNK.");
+
+    auto atom_tensor = get<0,0>(inter_tensor);
+    auto atom_in_N = get<0>(flat_coord);
+    auto atom_in_K = get<1>(flat_coord);
+    auto pipeline_tensor = get<2>(inter_tensor);
+
+    //composition
+    auto thr_tensor = make_layout(thr_layout_tensor, atom_tensor, atom_in_N, atom_in_K, pipeline_tensor);
+
+#if 0
+    if(thread0()){
+      print("\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\n");
+      print("aurora_thrfrag_B_split:\n");
+      print("original_n:");print(original_n);print("\n");
+      print("original_k:");print(original_k);print("\n");
+      print("btensor:");print(btensor);print("\n");
+      print("t_tile:");print(t_tile);print("\n");
+      print("t_tensor:");print(t_tensor);print("\n");
+      print("inter_tensor:");print(inter_tensor);print("\n");
+      print("flat_coord:");print(flat_coord);print("\n");
+      print("thr_tensor:");print(thr_tensor);print("\n"); //thr_tensor:((_1,(_4,_1)),((_64,_16),(_1,_1,_2))):((_0,(_64,_0)),((_1,_256),(_0,_0,_4096)))
+      print("\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\n\n");
+    }
+#endif
     return thr_tensor;
   }
 
@@ -676,42 +876,6 @@ struct TiledMMA : MMA_Atom
     return make_layout(begin_layout, intermedia_layout, final_layout);
   }
 
-  /**
-   * split (bM, bN) into (bM/m, bN/n),(m,n)
-   */
-//   template <class Shape>
-//   CUTE_HOST_DEVICE constexpr
-//   auto
-//   tile_to_dm_shape(Shape const& trg_shape){
-//     auto atom_thr = AtomAuroraThrLayout_MNK{};
-
-//     //split to 2*2
-//     auto splitM = size<0>(atom_thr);
-//     auto splitN = size<1>(atom_thr);
-
-//     auto calM = size<0>(shape(ctensor))/splitM;
-//     auto calN = size<1>(shape(ctensor))/splitN;
-
-//     auto t_tile = make_tile(calM, calN);
-//     auto t_tensor = zipped_divide(trg_shape, t_tile);
-
-//     auto help_layout = make_layout(make_shape(_1{}, _1{}), make_stride(_0{}, _0{}));
-//     auto split_tensor = make_layout(
-//                       get<1>(t_tensor),
-//                       get<0>(t_tensor),
-//                       get<0>(help_layout),
-//                       get<1>(help_layout)
-//                       );
-// #if 1
-//     if(thread0()){
-//       print("trg_shape:");print(trg_shape);print("\n");
-//       print("atom_thr:");print(atom_thr);print("\n");
-//       print("t_tensor:");print(t_tensor);print("\n");
-//       print("split_tensor:");print(split_tensor);print("\n");
-//     }
-// #endif
-//     return 
-//   }
 };
 
 template <class TiledMMA, class ThrVMNK>
@@ -791,10 +955,6 @@ struct ThrMMA : TiledMMA
   auto
   aurora_partition_C_v3(CTensor&& ctensor) const
   {
-    // auto target_tensor = make_layout(
-    //       make_shape(make_shape(_64{}, _64{}), make_shape(_2{}, _2{}), _2{}),
-    //       make_stride(make_stride(_1{}, _64{}), make_stride(_65536{}, _131072{}), _262144{})
-    //   );
     auto target_tensor = ctensor;
     auto help_layout = make_layout(make_shape(_1{}, _1{}), make_stride(_0{}, _0{}));
     auto res_layout = make_layout(get<1>(target_tensor.layout()), 
@@ -823,6 +983,31 @@ struct ThrMMA : TiledMMA
 
     // return ctensor;
     return res_test;
+  }
+
+  
+  template <class CTensor>
+  CUTE_HOST_DEVICE constexpr
+  auto
+  aurora_partition_C_split(CTensor&& ctensor) const
+  {
+    auto thr_tensor_res = make_tensor(static_cast<CTensor&&>(ctensor).data(), this->aurora_thrfrg_C_split(ctensor.layout()));
+    auto thr_mk = make_coord(get<1>(thr_vmnk_), get<2>(thr_vmnk_));
+    auto res = thr_tensor_res(make_coord(thr_mk, _, _, _, _));
+#if 0
+    if(thread0()){
+      auto rt = repeat<rank<1,1>(thr_tensor_res)>(_);
+      auto md = make_coord(_, repeat<rank<1,1>(thr_tensor_res)>(_));
+
+      print("in partition_A_v5 thread0:\n");
+      print("rt:");print(rt);print("\n");   //rt:(_,_,_)
+      print("md:");print(md);print("\n");   //md:(_,(_,_,_))
+      print("thr_tensor_res:");print(thr_tensor_res);print("\n");
+      print("res:");print(res);print("\n");
+      print("\n\n");
+    }
+#endif
+    return res;
   }
 
   template <class ATensor>
@@ -860,6 +1045,30 @@ struct ThrMMA : TiledMMA
       print("target_tensor:");print(target_tensor);print("\n");
       print("res_layout:");print(res_layout);print("\n");
       print("thr_mk:");print(thr_mk);print("\n");
+      print("res:");print(res);print("\n");
+      print("\n\n");
+    }
+#endif
+    return res;
+  }
+
+  template <class ATensor>
+  CUTE_HOST_DEVICE constexpr
+  auto
+  aurora_partition_A_split(ATensor&& atensor) const
+  {
+    auto thr_tensor_res = make_tensor(static_cast<ATensor&&>(atensor).data(), this->aurora_thrfrg_A_split(atensor.layout()));
+    auto thr_mk = make_coord(get<1>(thr_vmnk_), get<3>(thr_vmnk_));
+    auto res = thr_tensor_res(make_coord(thr_mk, _, _, _, _));
+#if 0
+    if(thread0()){
+      auto rt = repeat<rank<1,1>(thr_tensor_res)>(_);
+      auto md = make_coord(_, repeat<rank<1,1>(thr_tensor_res)>(_));
+
+      print("in partition_A_v5 thread0:\n");
+      print("rt:");print(rt);print("\n");   //rt:(_,_,_)
+      print("md:");print(md);print("\n");   //md:(_,(_,_,_))
+      print("thr_tensor_res:");print(thr_tensor_res);print("\n");
       print("res:");print(res);print("\n");
       print("\n\n");
     }
@@ -905,6 +1114,31 @@ struct ThrMMA : TiledMMA
     print("thr_mk:");print(thr_mk);print("\n");
     print("res:");print(res);print("\n");
     print("\n\n");
+    }
+#endif
+    return res;
+  }
+
+  template <class BTensor>
+  CUTE_HOST_DEVICE constexpr
+  auto
+  aurora_partition_B_split(BTensor&& btensor) const
+  {
+    auto thr_tensor_res = make_tensor(static_cast<BTensor&&>(btensor).data(), this->aurora_thrfrg_B_split(btensor.layout()));
+
+    auto thr_mk = make_coord(get<2>(thr_vmnk_), get<3>(thr_vmnk_));
+    auto res = thr_tensor_res(make_coord(thr_mk, _, _, _, _));
+#if 0
+    if(thread0()){
+      auto rt = repeat<rank<1,1>(thr_tensor_res)>(_);
+      auto md = make_coord(_, repeat<rank<1,1>(thr_tensor_res)>(_));
+
+      print("in partition_B_split:\n");
+      print("rt:");print(rt);print("\n");   //rt:(_,_,_)
+      print("md:");print(md);print("\n");   //md:(_,(_,_,_))
+      print("thr_tensor_res:");print(thr_tensor_res);print("\n");
+      print("res:");print(res);print("\n");
+      print("\n\n");
     }
 #endif
     return res;

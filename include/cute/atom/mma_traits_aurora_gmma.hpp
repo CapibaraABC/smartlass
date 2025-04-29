@@ -882,6 +882,46 @@ struct MMA_Traits<Aurora_128x128x128_F16F16F16_APELayoutM1N1K1_SS<tnspA, tnspB, 
   using AuroraDMLayout_MN = Layout<Shape<_1, _1>>;
   AMMA::ScaleOut accumulate_ = AMMA::ScaleOut::One;
 };
+
+template <
+  AMMA::Major tnspA,
+  AMMA::Major tnspB,
+  AMMA::ScaleIn  scaleA = AMMA::ScaleIn::One,
+  AMMA::ScaleIn  scaleB = AMMA::ScaleIn::One
+>
+using Aurora_64x64x16_F16F16F16_APELayoutM2N2K1_SS = AMMA::MMA_Aurora_64x64x16_F16F16F16_APELayoutM2N2K1_SS<tnspA, tnspB, scaleA, scaleB>;
+
+template <AMMA::Major tnspA, AMMA::Major tnspB, AMMA::ScaleIn scaleA, AMMA::ScaleIn scaleB>
+struct MMA_Traits<Aurora_64x64x16_F16F16F16_APELayoutM2N2K1_SS<tnspA, tnspB, scaleA, scaleB>>
+{
+  using ValTypeD = half_t;
+  using ValTypeA = half_t;
+  using ValTypeB = half_t;
+  using ValTypeC = half_t;
+
+  using FrgTypeA = AMMA::dm_desc<tnspA>;                //dm descriptor iterator
+  using FrgTypeB = AMMA::dm_desc<tnspB>;
+  using AuroraFrgTypeC = AMMA::dm_desc<tnspA>;
+  
+  using Shape_MNK = Shape<_64,_64,_16>;
+  using ThrID   = Layout<_1>;                           //to calculate a mma_atom only needs 1 thread
+  // using ThrID   = Layout<Shape<_2, _2, _1>>;
+  using ALayout = AMMA::ABLayout< 64, 16>;
+  using BLayout = AMMA::ABLayout< 64, 16>;
+  using CLayout = AMMA::CLayout_64x64;
+
+  using Split_MNK = decltype(make_tuple(Int<4>{}, Int<1>{}, Int<1>{}));
+  /**
+   * APE layout is 2*2*1, which means we split A to 2*1, B to 2*1, C to 2*2 for an CTA.
+   * layout_MNK=2 2 1
+   * 
+   */
+  using AuroraThrLayout_MNK = Layout<Shape<_2, _2, _1>>;   
+  using AuroraDMLayout_MN = Layout<Shape<_2, _2>, Stride<Int<131072>, Int<262144>>>;
+
+  AMMA::ScaleOut accumulate_ = AMMA::ScaleOut::One;
+};
+
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 } // end namespace cute

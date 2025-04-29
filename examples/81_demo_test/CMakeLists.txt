@@ -53,3 +53,8 @@ cutlass_example_add_executable(
   apc_demo
   apc_demo.cu
   )
+
+cutlass_example_add_executable(
+  apc_mma_splitDM_demo
+  apc_mma_splitDM_demo.cu
+  )

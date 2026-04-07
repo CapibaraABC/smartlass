@@ -37,7 +37,8 @@
 
 #include <cute/tensor_impl.hpp>
 
-#include <cute/atom/mma_atom.hpp>
+#include <cute/atom/mma_atom.hpp> //instead of this header file into mma_atom_mpu.hpp when we seperate cutlass out
+// #include <cute/atom/mma_atom_mpu.hpp>    
 
 /** The gemm algorithm takes four (or three) tensors and computes
  *   D = A * B + C

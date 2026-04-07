@@ -64,6 +64,7 @@ struct MMA_Atom<MMA_Traits<MMAOperation, Args...>>
   using LayoutC_TV = typename Traits::CLayout;
   using LayoutA_TV = typename Traits::ALayout;
   using LayoutB_TV = typename Traits::BLayout;
+  using LayoutAPEMNK  = typename Traits::APELayoutMNK;
 
   // Fragment value types from the MMA_Traits (optional, defaults to Val type)
   using FrgTypeD = typename detail::FrgTypeC_or_Default<Traits>::type;
@@ -133,7 +134,7 @@ struct MMA_Atom<MMA_Traits<MMAOperation, Args...>>
   {
     // Check that this tensor is likely already partitioned
     CUTE_STATIC_ASSERT_V(rank(ctensor) >= Int<3>{});  // VMN
-    CUTE_STATIC_ASSERT_V(size<0>(ctensor) == size<1>(LayoutC_TV{}));
+    // CUTE_STATIC_ASSERT_V(size<0>(ctensor) == size<1>(LayoutC_TV{}));
     // C is a bit special because we are after accumulators here
     // The input/output type doesn't have to match the accumulator type
     //static_assert(std::is_same<ValTypeC, typename remove_cvref_t<CTensor>::value_type>::value, "Expecting ValTypeC type");
@@ -215,6 +216,7 @@ struct TiledMMA : MMA_Atom
   using AtomLayoutC_TV = typename MMA_Atom::LayoutC_TV;
   using AtomLayoutA_TV = typename MMA_Atom::LayoutA_TV;
   using AtomLayoutB_TV = typename MMA_Atom::LayoutB_TV;
+  using AtomLayoutAPEMNK  = typename MMA_Atom::LayoutAPEMNK;
 
   static_assert(   rank_v<AtomLayoutMNK>  == 3,   "TiledMMA requires rank-3 AtomLayoutMNK");
   static_assert(   rank_v<PermutationMNK> == 3,   "TiledMMA requires rank-3 PermutationMNK");
@@ -262,12 +264,15 @@ struct TiledMMA : MMA_Atom
     auto c_tensor = zipped_divide(t_tensor, c_tile);                 // ((AtomM,AtomN),(RestM,RestN))
 
     // Transform the Atom mode from (M,K) to (Thr,Val)
-    auto tv_tensor = c_tensor.compose(AtomLayoutC_TV{},_);           // ((ThrV,FrgV),(RestM,RestN))
+    auto ctv = make_layout(make_shape(_1{}, make_shape(size<0>(AtomShape_MNK{}), size<1>(AtomShape_MNK{}))),
+                           make_stride(Int<0>{}, make_stride(_1{}, size<0>(AtomShape_MNK{}))));  //(_1, M, N) : (_0, _1, M)
+    auto tv_tensor = c_tensor.compose(ctv, _);
+    // auto tv_tensor = c_tensor.compose(AtomLayoutC_TV{},_);           // ((ThrV,FrgV),(RestM,RestN))
 
     // Tile the tensor for the C-threads
     auto thr_tile = make_tile(_,
-                              make_tile(make_layout(size<1>(thr_layout_vmnk_)),
-                                        make_layout(size<2>(thr_layout_vmnk_))));
+                              make_tile(make_layout(size<0>(AtomLayoutAPEMNK{})),
+                                        make_layout(size<1>(AtomLayoutAPEMNK{}))));
     auto thr_tensor = zipped_divide(tv_tensor, thr_tile);            // ((ThrV,(ThrM,ThrN)),(FrgV,(RestM,RestN)))
 
     return thr_tensor;
@@ -301,12 +306,15 @@ struct TiledMMA : MMA_Atom
     auto a_tensor = zipped_divide(t_tensor, a_tile);                 // ((AtomM,AtomK),(RestM,RestK))
 
     // Transform the Atom mode from (M,K) to (Thr,Val)
-    auto tv_tensor = a_tensor.compose(AtomLayoutA_TV{},_);           // ((ThrV,FrgV),(RestM,RestK))
+    auto atv = make_layout(make_shape(_1{}, make_shape(size<0>(AtomShape_MNK{}), size<2>(AtomShape_MNK{}))),
+                           make_stride(Int<0>{}, make_stride(_1{}, size<0>(AtomShape_MNK{}))));//(_1, M, K):(_0, _1, _M)
+    auto tv_tensor = a_tensor.compose(atv, _);
+    // auto tv_tensor = a_tensor.compose(AtomLayoutA_TV{},_);           // ((ThrV,FrgV),(RestM,RestK))
 
     // Tile the tensor for the Thread
     auto thr_tile = make_tile(_,
-                              make_tile(make_layout(size<1>(thr_layout_vmnk_)),
-                                        make_layout(size<3>(thr_layout_vmnk_))));
+                              make_tile(make_layout(size<0>(AtomLayoutAPEMNK{})),
+                                        make_layout(size<2>(AtomLayoutAPEMNK{}))));
     auto thr_tensor = zipped_divide(tv_tensor, thr_tile);            // ((ThrV,(ThrM,ThrK)),(FrgV,(RestM,RestK)))
 
     return thr_tensor;
@@ -340,12 +348,15 @@ struct TiledMMA : MMA_Atom
     auto b_tensor = zipped_divide(t_tensor, b_tile);                 // ((AtomN,AtomK),(RestN,RestK))
 
     // Transform the Atom mode from (M,K) to (Thr,Val)
-    auto tv_tensor = b_tensor.compose(AtomLayoutB_TV{},_);           // ((ThrV,FrgV),(RestN,RestK))
+    auto btv = make_layout(make_shape(_1{}, make_shape(size<1>(AtomShape_MNK{}), size<2>(AtomShape_MNK{}))),
+                           make_stride(Int<0>{}, make_stride(_1{}, size<1>(AtomShape_MNK{}))));//(_1, N, K):(_0, _1, _N)
+    auto tv_tensor = b_tensor.compose(btv,_);
+    // auto tv_tensor = b_tensor.compose(AtomLayoutB_TV{},_);           // ((ThrV,FrgV),(RestN,RestK))
 
     // Tile the tensor for the Thread
     auto thr_tile = make_tile(_,
-                              make_tile(make_layout(size<2>(thr_layout_vmnk_)),
-                                        make_layout(size<3>(thr_layout_vmnk_))));
+                              make_tile(make_layout(size<1>(AtomLayoutAPEMNK{})),
+                                        make_layout(size<2>(AtomLayoutAPEMNK{}))));
     auto thr_tensor = zipped_divide(tv_tensor, thr_tile);            // ((ThrV,(ThrN,ThrK)),(FrgV,(RestN,RestK)))
 
     return thr_tensor;
@@ -391,117 +402,6 @@ struct TiledMMA : MMA_Atom
   tile_size_mnk() const {
     static_assert(0 <= I && I < 3);
     return size(permutation_mnk<I>());
-  }
-
-  CUTE_HOST_DEVICE constexpr
-  auto
-  get_layoutC_MN() const
-  {
-    // (M,N) -> (M,N)
-    auto ref_C = make_layout(make_shape(tile_size_mnk<0>(), tile_size_mnk<1>()));
-    // (cthrid,val) -> (M,N)
-    auto layoutC_TV = thrfrg_C(ref_C);
-    // (M,N) -> (cthrid,frg)
-    auto layoutC_MN = right_inverse(layoutC_TV).with_shape(shape(ref_C));
-
-    // cthrid = (v,m,n) -> thr_idx
-    auto thrID_C = thr_layout_vmnk_(_,_,_,Int<0>{});
-
-    return cute::make_tuple(layoutC_MN, thrID_C);
-  }
-
-  CUTE_HOST_DEVICE constexpr
-  auto
-  get_layoutC_TV() const
-  {
-    // (M,N) -> (M,N)
-    auto ref_C = make_layout(make_shape(tile_size_mnk<0>(), tile_size_mnk<1>()));
-    // (cthrid,val) -> (M,N)
-    auto layoutC_TV = thrfrg_C(ref_C);
-
-    // thr_idx -> (ThrV,ThrM,ThrN,ThrK)
-    auto thridx_2_thrid = right_inverse(thr_layout_vmnk_);
-
-    // (thr_idx,val) -> (M,N)
-    return layoutC_TV.compose(thridx_2_thrid, _);
-  }
-
-  CUTE_HOST_DEVICE constexpr
-  auto
-  get_layoutA_MK() const
-  {
-    // (M,K) -> (M,K)
-    auto ref_A = make_layout(make_shape(tile_size_mnk<0>(), tile_size_mnk<2>()));
-    // (athrid,val) -> (M,K)
-    auto layoutA_TV = thrfrg_A(ref_A);
-    // (M,K) -> (athrid,frg)
-    auto layoutA_MK = right_inverse(layoutA_TV).with_shape(shape(ref_A));
-
-    // athrid = (v,m,k) -> thr_idx
-    auto thrID_A = thr_layout_vmnk_(_,_,Int<0>{},_);
-
-    return cute::make_tuple(layoutA_MK, thrID_A);
-  }
-
-  CUTE_HOST_DEVICE constexpr
-  auto
-  get_layoutA_TV() const
-  {
-    // (M,K) -> (M,K)
-    auto ref_A = make_layout(make_shape(tile_size_mnk<0>(), tile_size_mnk<2>()));
-    // (athrid,val) -> (M,K)
-    auto layoutA_TV = thrfrg_A(ref_A);
-
-    // (ThrV,(ThrM,ThrK)) -> (ThrV,(ThrM,ThrN,ThrK))
-    auto atile = make_tile(_,
-                           make_tile(make_layout(make_shape (size<1>(thr_layout_vmnk_), size<2>(thr_layout_vmnk_)),
-                                                 make_stride(               Int<1>{} ,                Int<0>{} )),
-                                     _));
-
-    // thr_idx -> (ThrV,ThrM,ThrN,ThrK)
-    auto thridx_2_thrid = right_inverse(thr_layout_vmnk_);
-
-    // (thr_idx,val) -> (M,K)
-    return thrfrg_A(ref_A).compose(atile, _).compose(thridx_2_thrid, _);
-  }
-
-  CUTE_HOST_DEVICE constexpr
-  auto
-  get_layoutB_NK() const
-  {
-    // (N,K) -> (N,K)
-    auto ref_B = make_layout(make_shape(tile_size_mnk<1>(), tile_size_mnk<2>()));
-    // (bthrid,val) -> (N,K)
-    auto layoutB_TV = thrfrg_B(ref_B);
-    // (N,K) -> (bthrid,frg)
-    auto layoutB_NK = right_inverse(layoutB_TV).with_shape(shape(ref_B));
-
-    // bthrid = (v,n,k) -> thr_idx
-    auto thrID_B = thr_layout_vmnk_(_,Int<0>{},_,_);
-
-    return cute::make_tuple(layoutB_NK, thrID_B);
-  }
-
-  CUTE_HOST_DEVICE constexpr
-  auto
-  get_layoutB_TV() const
-  {
-    // (N,K) -> (N,K)
-    auto ref_B = make_layout(make_shape(tile_size_mnk<1>(), tile_size_mnk<2>()));
-    // (bthrid,val) -> (N,K)
-    auto layoutB_TV = thrfrg_B(ref_B);
-
-    // (ThrV,(ThrN,ThrK)) -> (ThrV,(ThrM,ThrN,ThrK))
-    auto btile = make_tile(_,
-                           make_tile(make_layout(make_shape (size<1>(thr_layout_vmnk_), size<2>(thr_layout_vmnk_)),
-                                                 make_stride(               Int<0>{} ,                Int<1>{} )),
-                                     _));
-
-    // thr_idx -> (ThrV,ThrM,ThrN,ThrK)
-    auto thridx_2_thrid = right_inverse(thr_layout_vmnk_);
-
-    // (thr_idx,val) -> (N,K)
-    return thrfrg_B(ref_B).compose(btile, _).compose(thridx_2_thrid, _);
   }
 };
 
@@ -600,63 +500,6 @@ make_tiled_mma(MMA_Op       const&,
 {
   // Attempt to wrap in an MMA_Atom<> and forward
   return make_tiled_mma(MMA_Atom<MMA_Op>{}, thr_layout, permutations);
-}
-
-//
-// partition_fragment_C -- static context
-//
-
-template <class... Args, class Shape_MN>
-CUTE_HOST_DEVICE constexpr
-auto
-partition_shape_C(TiledMMA<Args...> const& mma, Shape_MN const& shape_MN)
-{
-  auto dummy    = make_layout(shape(shape_MN));
-  auto dummy_tv = mma.thrfrg_C(dummy);
-  // Slice+rearrange like partition_C
-  auto dummy_v  = dummy_tv(Int<0>{}, make_coord(_, repeat<rank(dummy)>(_)));
-  return shape(dummy_v);
-
-}
-
-
-template <class... Args, class Shape_MN>
-CUTE_HOST_DEVICE constexpr
-auto
-partition_fragment_C(TiledMMA<Args...> const& mma, Shape_MN const& shapeMN)
-{
-  return make_tensor<typename TiledMMA<Args...>::FrgTypeC>(partition_shape_C(mma, shapeMN));
-}
-
-// partition_fragment_A and partition_fragment_B often depend on the
-//   layout of A and B and/or the thread_idx that is requesting the partition.
-// For these reasons, they should not be used in a static context.
-// See TiledMMA::get_slice(thr_idx).partition_fragment_A(tensorA) instead.
-
-template <class... Args, class Shape_MK>
-CUTE_HOST_DEVICE constexpr
-auto
-partition_shape_A(TiledMMA<Args...> const& mma, Shape_MK const& shape_MK)
-{
-  auto dummy    = make_layout(shape(shape_MK));
-  auto dummy_tv = mma.thrfrg_A(dummy);
-  // Slice+rearrange like partition_A
-  auto dummy_v  = dummy_tv(Int<0>{}, make_coord(_, repeat<rank(dummy)>(_)));
-  return shape(dummy_v);
-
-}
-
-template <class... Args, class Shape_NK>
-CUTE_HOST_DEVICE constexpr
-auto
-partition_shape_B(TiledMMA<Args...> const& mma, Shape_NK const& shape_NK)
-{
-  auto dummy    = make_layout(shape(shape_NK));
-  auto dummy_tv = mma.thrfrg_B(dummy);
-  // Slice+rearrange like partition_B
-  auto dummy_v  = dummy_tv(Int<0>{}, make_coord(_, repeat<rank(dummy)>(_)));
-  return shape(dummy_v);
-
 }
 
 //

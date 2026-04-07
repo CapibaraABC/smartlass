@@ -69,7 +69,7 @@ template <class ProblemShape, class CtaTiler,
           class TC, class CStride, class TiledMma,
           class Alpha, class Beta>
 __global__ static
-// __launch_bounds__(decltype(size(TiledMma{}))::value)
+__launch_bounds__(decltype(size(TiledMma{}))::value)
 void
 gemm_device(ProblemShape shape_MNK, CtaTiler cta_tiler,
             TA const* A, CUTLASS_GRID_CONSTANT TmaA const tma_a,
@@ -302,9 +302,9 @@ gemm_nt(int m, int n, int k,
   auto dC = make_stride(Int<1>{}, ldC);                      // (dM, dN)
 
   // Define CTA tile sizes (static)
-  auto bM = Int<256>{};
-  auto bN = Int<64>{};
-  auto bK = Int< 16>{};
+  auto bM = Int<256>{};//256
+  auto bN = Int<64>{};//64
+  auto bK = Int< 16>{};//16
   auto cta_tiler = make_shape(bM, bN, bK);                   // (BLK_M, BLK_N, BLK_K)
   auto bP = Int<  3>{};  // Pipeline 3
 
@@ -321,14 +321,19 @@ gemm_nt(int m, int n, int k,
       make_stride(Int<1>{}, bN, bN*bK)
   );
 
-  // Define the MMA
-  // TiledMMA tiled_mma = make_tiled_mma(MPU_64x64x16_F16F16F16_SS<MPU::GMMA::Major::MN,MPU::GMMA::Major::MN>{});
-
-  using MMA_Atom = MPU_64x64x16_F16F16F16_SS<MPU::GMMA::Major::MN,MPU::GMMA::Major::MN>; 
+  // Define the MMA bMxbNxbK = 256*64*16
+  using APEMMAAtom = MPU_64x64x16_F16F16F16_4x1_SS<MPU::GMMA::Major::MN,MPU::GMMA::Major::MN>; 
   auto tiled_mma = make_tiled_mma(
-      MMA_Atom{},
-      make_layout(make_shape(Int<4>{}, Int<1>{})) // 线程布局：M方向排4个线程，N方向1个
+      APEMMAAtom{},
+      MMA_Traits<APEMMAAtom>::APELayoutMNK{}
   );
+
+  // //Define the MMA bMxbNxbK = 512*128*64
+  // using APEMMAAtom = MPU_128x128x64_F32F32F32_4x1_SS<MPU::GMMA::Major::MN,MPU::GMMA::Major::MN>;
+  // auto tiled_mma = make_tiled_mma(
+  //     APEMMAAtom{},
+  //     MMA_Traits<APEMMAAtom>::APELayoutMNK{}
+  // );
 
   // Define the TMAs
   // Create Global memory tensors for TMA inspection
@@ -345,9 +350,8 @@ gemm_nt(int m, int n, int k,
 
   // Launch parameter setup
   int smem_size = int(sizeof(SharedStorage<TA, TB, decltype(sA), decltype(sB)>));
-  // dim3 dimBlock(size(tiled_mma));
-  
-  dim3 dimBlock(4, 1, 1);
+  // dim3 dimBlock(4, 1, 1);
+  dim3 dimBlock(size(tiled_mma));
   print("dimBlock:");print(dimBlock);print("\n");
   dim3 dimCluster(1, 1, 1);
   dim3 dimGrid(round_up(size(ceil_div(m, bM)), dimCluster.x),
@@ -417,15 +421,15 @@ int main(int argc, char** argv)
 
 #if defined(CUTLASS_ARCH_MMA_SM90_SUPPORTED)
 
-  int m = 256;
+  int m = 256;//256
   if (argc >= 2)
     sscanf(argv[1], "%d", &m);
 
-  int n = 64;
+  int n = 64;//64
   if (argc >= 3)
     sscanf(argv[2], "%d", &n);
 
-  int k = 16;
+  int k = 16;//16
   if (argc >= 4)
     sscanf(argv[3], "%d", &k);
 
@@ -441,6 +445,10 @@ int main(int argc, char** argv)
   using TB = cute::half_t;
   using TC = cute::half_t;
   using TI = cute::half_t;
+  // using TA = float;
+  // using TB = float;
+  // using TC = float;
+  // using TI = float;
 
   TI alpha = TI(1.0f);
   TI beta  = TI(0.0f);

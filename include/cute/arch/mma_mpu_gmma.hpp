@@ -155,30 +155,35 @@ struct MMA_64x64x16_F16F16F16_SS
     // if(thread0() && blockIdx.x == 0 && blockIdx.y == 0 && blockIdx.z == 0) {// 
       printf("threadIdx.x:%d, call MMAOperation::MMA_64x64x16_F16F16F16_SS.\n", threadIdx.x);
     // }
+  }
+};
 
-// #if defined(CUTE_ARCH_MMA_SM90A_ENABLED)
-//     cutlass::arch::synclog_emit_wgmma_smem_smem(__LINE__, desc_a, desc_b);
-//     asm volatile(
-//     "{\n"
-//       ".reg .pred p;\n"
-//       "setp.ne.b32 p, %18, 0;\n"
-//       "wgmma.mma_async.sync.aligned.m64n64k16.f16.f16.f16 "
-//       "{%0,  %1,  %2,  %3,  %4,  %5,  %6,  %7,  "
-//       " %8,  %9,  %10, %11, %12, %13, %14, %15},"
-//       " %16,"
-//       " %17,"
-//       " p,   %19, %20, %21, %22;\n"
-//     "}\n"
-//       : "+r"(d00), "+r"(d01), "+r"(d02), "+r"(d03),
-//         "+r"(d04), "+r"(d05), "+r"(d06), "+r"(d07),
-//         "+r"(d08), "+r"(d09), "+r"(d10), "+r"(d11),
-//         "+r"(d12), "+r"(d13), "+r"(d14), "+r"(d15)
-//       :  "l"(desc_a),
-//          "l"(desc_b),
-//          "r"(int32_t(scale_D)), "n"(int32_t(scaleA)), "n"(int32_t(scaleB)), "n"(int32_t(tnspA)), "n"(int32_t(tnspB)));
-// #else
-//     CUTE_INVALID_CONTROL_PATH("Attempting to use MMA_64x64x16_F16F16F16_SS without CUTE_ARCH_MMA_SM90A_ENABLED");
-// #endif
+// GEMM 128x128x64 F32+=F32*F32
+template <
+  GMMA::Major tnspA,
+  GMMA::Major tnspB,
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+>
+struct MMA_128x128x64_F32F32F32_SS
+{
+  using DRegisters = void;
+  using ARegisters = uint64_t[1];
+  using BRegisters = uint64_t[1];
+  using CRegisters = uint32_t[16];
+
+  CUTE_HOST_DEVICE static void
+  fma(uint64_t const& desc_a,
+      uint64_t const& desc_b,
+      uint32_t      & d00, uint32_t      & d01, uint32_t      & d02, uint32_t      & d03,
+      uint32_t      & d04, uint32_t      & d05, uint32_t      & d06, uint32_t      & d07,
+      uint32_t      & d08, uint32_t      & d09, uint32_t      & d10, uint32_t      & d11,
+      uint32_t      & d12, uint32_t      & d13, uint32_t      & d14, uint32_t      & d15,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
+  {
+    // if(thread0() && blockIdx.x == 0 && blockIdx.y == 0 && blockIdx.z == 0) {// 
+      printf("threadIdx.x:%d, call MMAOperation::MMA_128x128x64_F32F32F32_SS.\n", threadIdx.x);
+    // }
   }
 };
 

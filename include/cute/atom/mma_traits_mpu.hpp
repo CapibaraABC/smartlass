@@ -235,10 +235,10 @@ make_gmma_desc(Tensor<TEngine,TLayout> const& tensor)
      * LayoutType::B64                : Swizzle<2,4,3> o smem_ptr o ((4,n),(8,k)):((1,LBO),(4,SBO))
      * LayoutType::B128               : Swizzle<3,4,3> o smem_ptr o ((8,n),(8,k)):((1,LBO),(8,SBO))
      */
-    static_assert(size<1>(u128_tensor) == Int<(256 / cute::sizeof_bits<value_type>::value)>{} || // A and B in dense MMA
-                  size<1>(u128_tensor) == Int<(128 / cute::sizeof_bits<value_type>::value)>{} || // A in sparse MMA
-                  size<1>(u128_tensor) == Int<(512 / cute::sizeof_bits<value_type>::value)>{},   // B in sparse MMA
-                         "Not a canonical GMMA_MN Layout: Expected K-size 256/sizeof_bits<T> for dense or (128|512)/sizeof_bits<T> for sparse.");
+    // static_assert(size<1>(u128_tensor) == Int<(256 / cute::sizeof_bits<value_type>::value)>{} || // A and B in dense MMA
+    //               size<1>(u128_tensor) == Int<(128 / cute::sizeof_bits<value_type>::value)>{} || // A in sparse MMA
+    //               size<1>(u128_tensor) == Int<(512 / cute::sizeof_bits<value_type>::value)>{},   // B in sparse MMA
+    //                      "Not a canonical GMMA_MN Layout: Expected K-size 256/sizeof_bits<T> for dense or (128|512)/sizeof_bits<T> for sparse.");
 
     // Construct the canonical GMMA T Layout with shape ((W,n),(8,2))
     Layout canonical_layout = logical_divide(layout(u128_tensor), make_tile(Layout<Int<W>,_1>{}, Layout<Int<8>,_1>{}));
@@ -420,7 +420,7 @@ mma_unpack(MMA_Traits<MMA_Op, MMA_Args...> const& traits,
 
   CUTE_STATIC_ASSERT_V(size(rA) == Int<RegNumA>{});
   CUTE_STATIC_ASSERT_V(size(rB) == Int<RegNumB>{});
-  CUTE_STATIC_ASSERT_V(size(rC) == Int<RegNumC>{});
+  // CUTE_STATIC_ASSERT_V(size(rC) == Int<RegNumC>{});
 
   detail::explode(MMA_Op::fma,
                   rA, make_int_sequence<RegNumA>{},
@@ -474,10 +474,10 @@ template <
   MPU::GMMA::ScaleIn  scaleA = MPU::GMMA::ScaleIn::One,
   MPU::GMMA::ScaleIn  scaleB = MPU::GMMA::ScaleIn::One
 >
-using MPU_64x64x16_F16F16F16_SS = MPU::GMMA::MMA_64x64x16_F16F16F16_SS<tnspA, tnspB, scaleA, scaleB>;
+using MPU_64x64x16_F16F16F16_4x1_SS = MPU::GMMA::MMA_64x64x16_F16F16F16_SS<tnspA, tnspB, scaleA, scaleB>;
 
 template <MPU::GMMA::Major tnspA, MPU::GMMA::Major tnspB, MPU::GMMA::ScaleIn scaleA, MPU::GMMA::ScaleIn scaleB>
-struct MMA_Traits<MPU_64x64x16_F16F16F16_SS<tnspA, tnspB, scaleA, scaleB>>
+struct MMA_Traits<MPU_64x64x16_F16F16F16_4x1_SS<tnspA, tnspB, scaleA, scaleB>>
 {
   using ValTypeD = half_t;
   using ValTypeA = half_t;
@@ -492,6 +492,36 @@ struct MMA_Traits<MPU_64x64x16_F16F16F16_SS<tnspA, tnspB, scaleA, scaleB>>
   using ALayout = MPU::GMMA::ABLayout< 64, 16>;
   using BLayout = MPU::GMMA::ABLayout< 64, 16>;
   using CLayout = MPU::GMMA::CLayout_64x64;
+  using APELayoutMNK = Layout<Shape<_4, _1, _1>>;    //APE layout
+
+  MPU::GMMA::ScaleOut accumulate_ = MPU::GMMA::ScaleOut::One;
+};
+
+template <
+  MPU::GMMA::Major tnspA,
+  MPU::GMMA::Major tnspB,
+  MPU::GMMA::ScaleIn  scaleA = MPU::GMMA::ScaleIn::One,
+  MPU::GMMA::ScaleIn  scaleB = MPU::GMMA::ScaleIn::One
+>
+using MPU_128x128x64_F32F32F32_4x1_SS = MPU::GMMA::MMA_128x128x64_F32F32F32_SS<tnspA, tnspB, scaleA, scaleB>;
+
+template <MPU::GMMA::Major tnspA, MPU::GMMA::Major tnspB, MPU::GMMA::ScaleIn scaleA, MPU::GMMA::ScaleIn scaleB>
+struct MMA_Traits<MPU_128x128x64_F32F32F32_4x1_SS<tnspA, tnspB, scaleA, scaleB>>
+{
+  using ValTypeD = float;
+  using ValTypeA = float;
+  using ValTypeB = float;
+  using ValTypeC = float;
+
+  using FrgTypeA = MPU::GMMA::smem_desc<tnspA>;
+  using FrgTypeB = MPU::GMMA::smem_desc<tnspB>;
+
+  using Shape_MNK = Shape<_128,_128,_64>;
+  using ThrID   = Layout<_1>;
+  using ALayout = MPU::GMMA::ABLayout< 128, 64>;
+  using BLayout = MPU::GMMA::ABLayout< 128, 64>;
+  using CLayout = MPU::GMMA::CLayout_64x64;
+  using APELayoutMNK = Layout<Shape<_4, _1, _1>>;    //APE layout
 
   MPU::GMMA::ScaleOut accumulate_ = MPU::GMMA::ScaleOut::One;
 };

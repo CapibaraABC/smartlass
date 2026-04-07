@@ -222,6 +222,8 @@ struct TiledMMA : MMA_Atom
   static_assert(   rank_v<PermutationMNK> == 3,   "TiledMMA requires rank-3 PermutationMNK");
   static_assert( is_tuple<PermutationMNK>::value, "TiledMMA requires independent permutations of MNK.");
   static_assert(is_static<PermutationMNK>::value, "TiledMMA requires static permutations of MNK.");
+  static_assert(compatible(shape(AtomLayoutMNK{}), shape(AtomLayoutAPEMNK{})), 
+                "Error: The tiling layout (AtomLayoutMNK) must match the MMA Atom's intrinsic APE layout shape.");
 
   using ThrLayoutVMNK = decltype(tiled_product(AtomThrID{}, AtomLayoutMNK{}));
   ThrLayoutVMNK thr_layout_vmnk_;

@@ -204,11 +204,7 @@ gemm_device(ProblemShape shape_MNK, CtaTiler cta_tiler,
   Tensor tCrB = thr_mma.make_fragment_B(tCsB);                         // (MMA,MMA_N,MMA_K,PIPE)
 
 #if 1
-  auto thr_vmnk_ = thr_mma.thr_vmnk_;
-  for (int tid = 0; tid < blockDim.x; ++tid) {
-    if(tid == threadIdx.x) {
-      print("===========================\n");
-      print("thr_vmnk_:"); print(thr_vmnk_); print("\n");
+  if(thread0()) {
       print("sA  : "); print(sA); print("\n");
       print("sB  : "); print(sB); print("\n");
       print("gC  : "); print(gC); print("\n");
@@ -223,8 +219,6 @@ gemm_device(ProblemShape shape_MNK, CtaTiler cta_tiler,
       print("tCrB  : "); print(tCrB); print("\n");
       print("tCrC  : "); print(tCrC); print("\n");
       print("---------------------\n");
-    }
-    __syncthreads();
   }
 #endif
 
@@ -284,6 +278,76 @@ gemm_device(ProblemShape shape_MNK, CtaTiler cta_tiler,
   axpby(alpha, tCrC, beta, tCgC);
 }
 
+template <class ProblemShape, class CtaTiler,
+          class TA, class SmemLayoutA,
+          class TB, class SmemLayoutB,
+          class TC, class CStride, class TiledMma,
+          class Alpha, class Beta>
+__global__ static
+void gemm_device_nt(ProblemShape shape_MNK, CtaTiler cta_tiler,
+                    TA const* A, TB const* B, TC* C, CStride dC,
+                    TiledMma mma, Alpha alpha, Beta beta)
+{
+    using namespace cute;
+    auto [M, N, K] = shape_MNK;
+
+    // 1. Global View
+    Tensor mA = make_tensor(make_gmem_ptr(A), make_shape(M, K), make_stride(Int<1>{}, M));
+    Tensor mB = make_tensor(make_gmem_ptr(B), make_shape(N, K), make_stride(Int<1>{}, N));
+    Tensor mC = make_tensor(make_gmem_ptr(C), make_shape(M, N), dC);
+
+    auto cta_coord = make_coord(blockIdx.x, blockIdx.y, _);
+    Tensor gA = local_tile(mA, cta_tiler, cta_coord, Step<_1, X, _1>{}); // (BLK_M, BLK_K, k)
+    Tensor gB = local_tile(mB, cta_tiler, cta_coord, Step<X, _1, _1>{}); // (BLK_N, BLK_K, k)
+    Tensor gC = local_tile(mC, cta_tiler, cta_coord, Step<_1, _1, X>{}); // (BLK_M, BLK_N)
+
+    // 2. Shared Memory
+    extern __shared__ char shared_memory[];
+    using SharedStorageT = SharedStorage<TA, TB, SmemLayoutA, SmemLayoutB>;
+    SharedStorageT& smem = *reinterpret_cast<SharedStorageT*>(shared_memory);
+
+    Tensor sA = make_tensor(make_smem_ptr(smem.smem_A.data()), SmemLayoutA{}); // (M,K,P)
+    Tensor sB = make_tensor(make_smem_ptr(smem.smem_B.data()), SmemLayoutB{}); // (N,K,P)
+
+    // 3. Register Fragments
+    auto thr_mma = mma.get_thread_slice(threadIdx.x);
+    // 先切分，再根据切分后的结果创建 fragment
+    auto tCgC = thr_mma.partition_C(gC);       // (MMA, MMA_M, MMA_N)
+    auto tCrC = thr_mma.make_fragment_C(tCgC); // (MMA, MMA_M, MMA_N)
+    clear(tCrC);
+
+    // 4. Mainloop
+    int k_tiles = size<2>(gA);
+    for (int kt = 0; kt < k_tiles; ++kt) {
+        // 显式使用异步拷贝将数据从 GMEM 搬运到 SMEM
+        // 注意：如果是 float 类型且没有使用特殊的布局（如 Swizzle），确保对齐
+        copy(gA(_, _, kt), sA(_, _, 0)); 
+        
+        // 注意：SM90 WGMMA 通常配合 cp.async.bulk 或 TMA
+        // 如果用普通的 copy，确保同步
+        cp_async_wait<0>();
+        __syncthreads();
+
+        // 关键修改：直接使用 partition 后的 Smem 视图
+        auto tCsA = thr_mma.partition_A(sA(_, _, 0)); // 返回的是 Descriptor Tensor
+        auto tCsB = thr_mma.partition_B(sB(_, _, 0));
+
+        // 在执行 WGMMA 之前，Hopper 架构通常需要 warpgroup 级别的同步指令
+        // 虽然 cute::gemm 内部会尝试处理，但手动管理更安全
+        warpgroup_arrive();
+        cute::gemm(mma, tCsA, tCsB, tCrC);
+        warpgroup_commit_batch();
+        warpgroup_wait<0>();
+
+        __syncthreads();
+    }
+
+    // 5. Epilogue
+    tCgC = thr_mma.partition_C(gC);
+    axpby(alpha, tCrC, beta, tCgC);
+}
+
+
 // Setup params for an NT GEMM
 template <class TA, class TB, class TC,
           class Alpha, class Beta>
@@ -308,9 +372,9 @@ gemm_nt(int m, int n, int k,
   auto dC = make_stride(Int<1>{}, ldC);                      // (dM, dN)
 
   // Define CTA tile sizes (static)
-  auto bM = Int<256>{};//256
-  auto bN = Int<64>{};//64
-  auto bK = Int< 16>{};//16
+  auto bM = Int<512>{};//256
+  auto bN = Int<128>{};//64
+  auto bK = Int< 64>{};//16
   auto cta_tiler = make_shape(bM, bN, bK);                   // (BLK_M, BLK_N, BLK_K)
   auto bP = Int<  3>{};  // Pipeline 3
 
@@ -328,18 +392,18 @@ gemm_nt(int m, int n, int k,
   );
 
   // Define the MMA bMxbNxbK = 256*64*16
-  using APEMMAAtom = MPU_64x64x16_F16F16F16_4x1_SS<MPU::GMMA::Major::MN,MPU::GMMA::Major::MN>; 
-  auto tiled_mma = make_tiled_mma(
-      APEMMAAtom{},
-      MMA_Traits<APEMMAAtom>::APELayoutMNK{}
-  );
-
-  //Define the MMA bMxbNxbK = 512*128*64 but report tma descriptor error
-  // using APEMMAAtom = MPU_128x128x64_F32F32F32_4x1_SS<MPU::GMMA::Major::MN,MPU::GMMA::Major::MN>;
+  // using APEMMAAtom = MPU_64x64x16_F16F16F16_4x1_SS<MPU::GMMA::Major::MN,MPU::GMMA::Major::MN>; 
   // auto tiled_mma = make_tiled_mma(
   //     APEMMAAtom{},
   //     MMA_Traits<APEMMAAtom>::APELayoutMNK{}
   // );
+
+  //Define the MMA bMxbNxbK = 512*128*64
+  using APEMMAAtom = MPU_128x128x64_F32F32F32_4x1_SS<MPU::GMMA::Major::MN,MPU::GMMA::Major::MN>;
+  auto tiled_mma = make_tiled_mma(
+      APEMMAAtom{},
+      MMA_Traits<APEMMAAtom>::APELayoutMNK{}
+  );
 
   // Define the TMAs
   // Create Global memory tensors for TMA inspection
@@ -392,6 +456,64 @@ gemm_nt(int m, int n, int k,
 
 template <class TA, class TB, class TC,
           class Alpha, class Beta>
+void gemm_nt_non_tma(int m, int n, int k,
+                     Alpha alpha,
+                     TA const* A, int ldA,
+                     TB const* B, int ldB,
+                     Beta beta,
+                     TC* C, int ldC,
+                     cudaStream_t stream=0)
+{
+    auto prob_shape = make_shape(m,n,k);
+
+    auto bM = Int<512>{};//256
+    auto bN = Int<128>{};//64
+    auto bK = Int< 64>{};//16
+    auto cta_tiler = make_shape(bM, bN, bK);                   // (BLK_M, BLK_N, BLK_K)
+    auto bP = Int<  3>{};  // Pipeline 3
+
+    auto sA_layout_atom = GMMA::Layout_MN_SW128_Atom<TA>{}; 
+    auto sB_layout_atom = GMMA::Layout_MN_SW128_Atom<TB>{};
+
+    auto sA = tile_to_shape(sA_layout_atom, make_shape(bM, bK, bP));
+    auto sB = tile_to_shape(sB_layout_atom, make_shape(bN, bK, bP));
+
+    // auto sA = make_layout(make_shape(bM,bK,bP),
+    //                       make_stride(Int<1>{}, bM, bM*bK));
+    // auto sB = make_layout(make_shape(bN,bK,bP),
+    //                       make_stride(Int<1>{}, bN, bN*bK));
+
+    using APEMMAAtom = MPU_128x128x64_F32F32F32_4x1_SS<MPU::GMMA::Major::MN, MPU::GMMA::Major::MN>;
+    auto tiled_mma = make_tiled_mma(APEMMAAtom{}, MMA_Traits<APEMMAAtom>::APELayoutMNK{});
+
+    int smem_size = int(sizeof(SharedStorage<TA,TB,decltype(sA),decltype(sB)>));
+
+    dim3 dimBlock(size(tiled_mma));
+    dim3 dimGrid( (m+512-1)/512, (n+128-1)/128 );
+
+    cutlass::ClusterLaunchParams params = {dimGrid, dimBlock, dim3(1,1,1), smem_size};
+
+    void const* kernel_ptr = reinterpret_cast<void const*>(
+        &gemm_device_nt<decltype(prob_shape), decltype(cta_tiler),
+                        TA, decltype(sA), TB, decltype(sB),
+                        TC, decltype(make_stride(Int<1>{},ldC)), decltype(tiled_mma),
+                        Alpha, Beta>
+    );
+
+    cutlass::Status status = cutlass::launch_kernel_on_cluster(params, kernel_ptr,
+                                                               prob_shape, cta_tiler,
+                                                               A,B,C,
+                                                               make_stride(Int<1>{},ldC),
+                                                               tiled_mma,
+                                                               alpha, beta);
+
+    CUTE_CHECK_LAST();
+    if(status != cutlass::Status::kSuccess)
+        std::cerr<<"GEMM kernel launch failed\n";
+}
+
+template <class TA, class TB, class TC,
+          class Alpha, class Beta>
 void
 gemm(char transA, char transB, int m, int n, int k,
      Alpha alpha,
@@ -402,7 +524,8 @@ gemm(char transA, char transB, int m, int n, int k,
      cudaStream_t stream = 0)
 {
   if (transA == 'N' && transB == 'T') {
-    return gemm_nt(m, n, k, alpha, A, ldA, B, ldB, beta, C, ldC, stream);
+    // return gemm_nt(m, n, k, alpha, A, ldA, B, ldB, beta, C, ldC, stream);
+    return gemm_nt_non_tma(m, n, k, alpha, A, ldA, B, ldB, beta, C, ldC, stream);
   } else
   // if (transA == 'T' && transB == 'N') {
   //   return gemm_tn(m, n, k, alpha, A, ldA, B, ldB, beta, C, ldC, stream);
@@ -427,15 +550,15 @@ int main(int argc, char** argv)
 
 #if defined(CUTLASS_ARCH_MMA_SM90_SUPPORTED)
 
-  int m = 256;//256
+  int m = 512;//256
   if (argc >= 2)
     sscanf(argv[1], "%d", &m);
 
-  int n = 64;//64
+  int n = 128;//64
   if (argc >= 3)
     sscanf(argv[2], "%d", &n);
 
-  int k = 16;//16
+  int k = 64;//16
   if (argc >= 4)
     sscanf(argv[3], "%d", &k);
 
@@ -447,14 +570,14 @@ int main(int argc, char** argv)
   if (argc >= 6)
     sscanf(argv[5], "%c", &transB);
 
-  using TA = cute::half_t;
-  using TB = cute::half_t;
-  using TC = cute::half_t;
-  using TI = cute::half_t;
-  // using TA = float;
-  // using TB = float;
-  // using TC = float;
-  // using TI = float;
+  // using TA = cute::half_t;
+  // using TB = cute::half_t;
+  // using TC = cute::half_t;
+  // using TI = cute::half_t;
+  using TA = float;
+  using TB = float;
+  using TC = float;
+  using TI = float;
 
   TI alpha = TI(1.0f);
   TI beta  = TI(0.0f);

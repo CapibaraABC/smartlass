@@ -508,7 +508,7 @@ using MPU_128x128x64_F32F32F32_4x1_SS = MPU::GMMA::MMA_128x128x64_F32F32F32_SS<t
 template <MPU::GMMA::Major tnspA, MPU::GMMA::Major tnspB, MPU::GMMA::ScaleIn scaleA, MPU::GMMA::ScaleIn scaleB>
 struct MMA_Traits<MPU_128x128x64_F32F32F32_4x1_SS<tnspA, tnspB, scaleA, scaleB>>
 {
-  using ValTypeD = float;
+  using ValTypeD = float;    //half_t if use float, then tma copy will report error
   using ValTypeA = float;
   using ValTypeB = float;
   using ValTypeC = float;

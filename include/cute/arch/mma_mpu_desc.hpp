@@ -83,72 +83,63 @@ CUTE_HOST std::ostream& operator<<(std::ostream& os, LayoutType const& t) {
 
 } // end namespace MPU::GMMA
 
-// union GmmaDescriptor
-// {
-//   CUTE_HOST_DEVICE constexpr
-//   GmmaDescriptor() noexcept : desc_(0) {}
-//   CUTE_HOST_DEVICE constexpr
-//   GmmaDescriptor(uint64_t desc) noexcept : desc_(desc) {}
-//   CUTE_HOST_DEVICE constexpr
-//   GmmaDescriptor(GmmaDescriptor const& t) noexcept : desc_(t.desc_) {}
-//   CUTE_HOST_DEVICE constexpr
-//   GmmaDescriptor(GmmaDescriptor && t) noexcept : desc_(t.desc_) {}
+struct DMDescriptor
+{
+  uint32_t shape0;    //M for matrixA, N for matrixB, M for matrixC
+  uint32_t shape1;    //K for matrixA, K for matrixB, N for matrixC
 
-//   CUTE_HOST_DEVICE constexpr
-//   GmmaDescriptor& operator=(GmmaDescriptor const& t) noexcept {
-//     desc_ = t.desc_;
-//     return *this;
-//   }
+  uint32_t dmAddr;    //start addr for DM
+  uint32_t strideByteOffset;  //stride offset in bytes between to k-tile mma_atom
 
-//   CUTE_HOST_DEVICE constexpr
-//   GmmaDescriptor& operator=(GmmaDescriptor && t) noexcept {
-//     desc_ = t.desc_;
-//     return *this;
-//   }
+  CUTE_HOST_DEVICE constexpr
+  DMDescriptor() noexcept : shape0(0), shape1(1), dmAddr(0x0), strideByteOffset(0) {}
+  CUTE_HOST_DEVICE constexpr
+  DMDescriptor(uint32_t s0, uint32_t s1, uint32_t dm, uint32_t stride = 0) noexcept : shape0(s0), shape1(s1), dmAddr(dm), strideByteOffset(stride) {}
+  CUTE_HOST_DEVICE constexpr
+  DMDescriptor(DMDescriptor const& t) noexcept : shape0(t.shape0), shape1(t.shape1), dmAddr(t.dmAddr), strideByteOffset(t.strideByteOffset) {}
+  CUTE_HOST_DEVICE constexpr
+  DMDescriptor(DMDescriptor && t) noexcept : shape0(t.shape0), shape1(t.shape1), dmAddr(t.dmAddr), strideByteOffset(t.strideByteOffset) {}
 
-//   uint64_t desc_;
-//   uint32_t reg32_[2];
-//   uint16_t reg16_[4];
+  CUTE_HOST_DEVICE constexpr
+  DMDescriptor& operator=(DMDescriptor const& t) noexcept {
+    shape0 = t.shape0;
+    shape1 = t.shape1;
+    dmAddr = t.dmAddr;
+    strideByteOffset = t.strideByteOffset;
+    return *this;
+  }
 
-//   // Bitfield implementation avoids the need for shifts in assignment
-//   struct {
-//     // start_address, bit [0,14), 4LSB not included
-//     uint16_t start_address_ : 14, : 2;        // 14 bits [0,14), 2 bits unused
-//     // leading dimension byte offset, bit [16,30), 4LSB not included
-//     // For N: This is the stride from the first col to the second col of the 8x2 brick in INTERLEAVED
-//     //   Unused for all SWIZZLE_* layouts (and assumed to be 1)
-//     // For T: This is the stride from the first 8 rows to the next 8 rows.
-//     uint16_t leading_byte_offset_ : 14, : 2;  // 14 bits [0,14), 2 bits unused
-//     // stride dimension byte offset, bit [32,46), 4LSB not included
-//     // For N: This is the stride from the first 8 rows to the next 8 rows.
-//     // For T: This is the stride fro mthe first 8 cols to the next 8 cols.
-//     uint16_t stride_byte_offset_ : 14, : 2;   // 14 bits [0,14), 2 bits unused
-//     // base_offset, bit [49,52)
-//     // Valid only for SWIZZLE_128B and SWIZZLE_64B
-//     uint8_t : 1, base_offset_ : 3, : 4;       // 1 bit unused, 3 bits [1,4), 4 bits unused
-//     // layout type, bit [62,64)
-//     // SWIZZLE_NONE = 0, SWIZZLE_32B = 3, SWIZZLE_64B = 2, SWIZZLE_128B = 1
-//     uint8_t : 6, layout_type_ : 2;            // 6 bits unused, 2 bits [6,8)
-//   } bitfield;
+  CUTE_HOST_DEVICE constexpr
+  DMDescriptor& operator=(DMDescriptor && t) noexcept {
+    shape0 = t.shape0;
+    shape1 = t.shape1;
+    dmAddr = t.dmAddr;
+    strideByteOffset = t.strideByteOffset;
+    return *this;
+  }
 
-//   // Decay to a uint64_t
-//   CUTE_HOST_DEVICE constexpr
-//   operator uint64_t() const noexcept { return desc_; }
-// };
+  // Decay to a uint32_t
+  CUTE_HOST_DEVICE constexpr
+  operator uint32_t() const noexcept { return dmAddr; }
+};
 
-// // Printer
-// CUTE_HOST_DEVICE void
-// print(GmmaDescriptor const& t)
-// {
-// #if !defined(__CUDACC_RTC__)
-//   printf("GmmaDescriptor: 0x%016llx\n",   static_cast<unsigned long long>(t.desc_));
-//   printf("  start_addr :  0x%04x\n",      t.bitfield.start_address_);
-//   printf("  leading_off:  0x%04x (%d)\n", t.bitfield.leading_byte_offset_, t.bitfield.leading_byte_offset_);
-//   printf("  stride_off :  0x%04x (%d)\n", t.bitfield.stride_byte_offset_, t.bitfield.stride_byte_offset_);
-//   printf("  base_offset:  0x%01x\n",      t.bitfield.base_offset_);
-//   printf("  layout_type:  0x%01x (%s)\n", t.bitfield.layout_type_, to_string(static_cast<MPU::GMMA::LayoutType>(t.bitfield.layout_type_)));
-// #endif // !defined(__CUDACC_RTC__)
-// }
+CUTE_HOST_DEVICE constexpr
+DMDescriptor operator+(DMDescriptor const& lhs, uint32_t rhs) noexcept {
+  return DMDescriptor(lhs.shape0, lhs.shape1, lhs.dmAddr + rhs, lhs.strideByteOffset);
+}
+
+// Printer
+CUTE_HOST_DEVICE void
+print(DMDescriptor const& t)
+{
+#if !defined(__CUDACC_RTC__)
+  printf("DMDescriptor: \n");
+  printf("  shape0 :  %u\n",      t.shape0);
+  printf("  shape1 :  %u\n",      t.shape1);
+  printf("  dmAddr :  0x%04x\n",  t.dmAddr);
+  printf("  strideByteOffset:  0x%01x\n",      t.strideByteOffset);
+#endif // !defined(__CUDACC_RTC__)
+}
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 

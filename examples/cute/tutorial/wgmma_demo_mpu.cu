@@ -52,12 +52,15 @@ using namespace cute;
 
 template <class ElementA,
           class ElementB,
+          class ElementC,
           class SmemLayoutA,  // (M,K,P)
-          class SmemLayoutB>  // (N,K,P)
+          class SmemLayoutB,  // (N,K,P)
+          class SmemLayoutC>  // (M,N,P)
 struct SharedStorage
 {
   array_aligned<ElementA, cosize_v<SmemLayoutA>> smem_A;
   array_aligned<ElementB, cosize_v<SmemLayoutB>> smem_B;
+  array_aligned<ElementC, cosize_v<SmemLayoutC>> smem_C;
 
   uint64_t tma_barrier[size<2>(SmemLayoutA{})];
   uint64_t mma_barrier[size<2>(SmemLayoutA{})];
@@ -66,6 +69,7 @@ struct SharedStorage
 template <class ProblemShape, class CtaTiler,
           class TA, class SmemLayoutA, class TmaA,
           class TB, class SmemLayoutB, class TmaB,
+          class SmemLayoutC,
           class TC, class CStride, class TiledMma,
           class Alpha, class Beta>
 __global__ static
@@ -109,10 +113,11 @@ gemm_device(ProblemShape shape_MNK, CtaTiler cta_tiler,
 
   // Shared memory tensors
   extern __shared__ char shared_memory[];
-  using SharedStorage = SharedStorage<TA, TB, SmemLayoutA, SmemLayoutB>;
+  using SharedStorage = SharedStorage<TA, TB, TC, SmemLayoutA, SmemLayoutB, SmemLayoutC>;
   SharedStorage& smem = *reinterpret_cast<SharedStorage*>(shared_memory);
   Tensor sA = make_tensor(make_smem_ptr(smem.smem_A.data()), SmemLayoutA{}); // (BLK_M,BLK_K,PIPE)
   Tensor sB = make_tensor(make_smem_ptr(smem.smem_B.data()), SmemLayoutB{}); // (BLK_N,BLK_K,PIPE)
+  Tensor sC = make_tensor(make_smem_ptr(smem.smem_C.data()), SmemLayoutC{}); // (BLK_M,BLK_N,PIPE)
 
   //
   // Partition the copying of A and B tiles
@@ -193,7 +198,7 @@ gemm_device(ProblemShape shape_MNK, CtaTiler cta_tiler,
   ThrMMA thr_mma = mma.get_thread_slice(threadIdx.x);
   Tensor tCsA = thr_mma.partition_A(sA);                               // (MMA,MMA_M,MMA_K,PIPE)
   Tensor tCsB = thr_mma.partition_B(sB);                               // (MMA,MMA_N,MMA_K,PIPE)
-  Tensor tCgC = thr_mma.partition_C(gC);                               // (MMA,MMA_M,MMA_N)
+  Tensor tCgC = thr_mma.partition_C(sC);                               // (MMA,MMA_M,MMA_N)
 
   // Allocate accumulators and clear them
   Tensor tCrC = thr_mma.make_fragment_C(tCgC);                         // (MMA,MMA_M,MMA_N)
@@ -211,7 +216,7 @@ gemm_device(ProblemShape shape_MNK, CtaTiler cta_tiler,
       print("thr_vmnk_:"); print(thr_vmnk_); print("\n");
       print("sA  : "); print(sA); print("\n");
       print("sB  : "); print(sB); print("\n");
-      print("gC  : "); print(gC); print("\n");
+      print("sC  : "); print(sC); print("\n");
       print("---------------------\n");
 
       print("tCsA  : "); print(tCsA); print("\n");
@@ -252,7 +257,7 @@ gemm_device(ProblemShape shape_MNK, CtaTiler cta_tiler,
 
     // MMAs to cover 1 K_TILE
     // warpgroup_arrive();
-    gemm(mma, tCrA(_,_,_,read_pipe), tCrB(_,_,_,read_pipe), tCrC);     // (V,M) x (V,N) => (V,M,N)
+    gemm(mma, tCrA(_,_,_,read_pipe), tCrB(_,_,_,read_pipe), tCrC(_,_,_,read_pipe));     // (V,M) x (V,N) => (V,M,N)
     // warpgroup_commit_batch();
 
     // Wait for all MMAs in a K_TILE to complete
@@ -327,6 +332,11 @@ gemm_nt(int m, int n, int k,
       make_stride(Int<1>{}, bN, bN*bK)
   );
 
+  auto sC = make_layout(
+      make_shape(bM, bN, bP),
+      make_stride(Int<1>{}, bM, bM*bN)
+  );
+
   // Define the MMA bMxbNxbK = 256*64*16
   using APEMMAAtom = MPU_64x64x16_F16F16F16_4x1_SS<MPU::GMMA::Major::MN,MPU::GMMA::Major::MN>; 
   auto tiled_mma = make_tiled_mma(
@@ -355,7 +365,7 @@ gemm_nt(int m, int n, int k,
   //
 
   // Launch parameter setup
-  int smem_size = int(sizeof(SharedStorage<TA, TB, decltype(sA), decltype(sB)>));
+  int smem_size = int(sizeof(SharedStorage<TA, TB, TC, decltype(sA), decltype(sB), decltype(sC)>));
   // dim3 dimBlock(4, 1, 1);
   dim3 dimBlock(size(tiled_mma));
   print("dimBlock:");print(dimBlock);print("\n");
@@ -368,6 +378,7 @@ gemm_nt(int m, int n, int k,
                               &gemm_device<decltype(prob_shape), decltype(cta_tiler),
                                            TA, decltype(sA), decltype(tmaA),
                                            TB, decltype(sB), decltype(tmaB),
+                                           decltype(sC),
                                            TC, decltype(dC), decltype(tiled_mma),
                                            decltype(alpha), decltype(beta)>);
 

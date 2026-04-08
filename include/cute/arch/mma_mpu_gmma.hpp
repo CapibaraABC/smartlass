@@ -143,6 +143,25 @@ struct MMA_64x64x16_F16F16F16_SS
   using BRegisters = uint64_t[1];
   using CRegisters = uint32_t[16];
 
+  // APE calculate
+  CUTE_HOST_DEVICE static void
+  gemmKernel(uint16_t const alpha, 
+           uint32_t const m, 
+           uint32_t const n, 
+           uint32_t const k,
+           void* const MatrixA, 
+           void* const MatrixB, 
+           void* const MatrixC){
+            {
+              uint y = threadIdx.y + blockIdx.y * blockDim.y;
+              uint x = threadIdx.x + blockIdx.x * blockDim.x + gridDim.x * blockDim.x * y;
+              if (x == 0) {
+                printf("alpha:%u, m:%u, n:%u, k:%u\n", alpha, m, n, k);
+                printf("MatrixA:%p, MatrixB:%p, MatrixC:%p\n", MatrixA, MatrixB, MatrixC);
+              }
+            }
+  }
+
   CUTE_HOST_DEVICE static void
   fma(uint64_t const& desc_a,
       uint64_t const& desc_b,

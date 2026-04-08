@@ -123,180 +123,47 @@ using Layout_SW128_Atom = typename conditional<tnsp == Major::MN,
                                                Layout_MN_SW128_Atom<Type>,
                                                Layout_K_SW128_Atom<Type>>::type;
 
-//
-// Tensor (position-dependent swizzle) to LayoutType utility
-//
-
-template <class Engine, class Shape, class Stride>
-CUTE_HOST_DEVICE constexpr
-LayoutType
-layout_type(Tensor<Engine, Layout<Shape,Stride>> const&)
-{
-  static_assert(is_same<uint128_t, typename Engine::value_type>::value,
-                "Expected uint128_t type in LayoutType conversion.");
-
-  using Swizzle = get_swizzle_t<Engine>;
-  constexpr int B = Swizzle::num_bits;
-  constexpr int M = Swizzle::num_base;
-  constexpr int S = Swizzle::num_shft;
-
-  static_assert(M == 4,           "Unsupported layout swizzle");
-  static_assert(0 <= B && B <= 3, "Unsupported layout swizzle");
-  static_assert(S == 3,           "Unsupported layout swizzle");
-
-  switch (B) {
-    case 0: return LayoutType::INTERLEAVE;
-    case 1: return LayoutType::B32;
-    case 2: return LayoutType::B64;
-    case 3: return LayoutType::B128;
-  }
-  return LayoutType::INTERLEAVE;  // ERROR
-}
-
 ///////////////////////////////////////////////////////////////////////////////
 // Construction method for GMMA Descriptors
 ///////////////////////////////////////////////////////////////////////////////
 
 /**
 * ///////////////////////////////
-* // make_gmma_desc<Major::MN> //
+* // make_dm_desc<Major::MN> //
 * ///////////////////////////////
-* Each GmmaDescriptor Major-MN describes a canonical layout of the form
-*
-* LayoutType::INTERLEAVE   : Swizzle<0,4,3> o smem_ptr o ((T,1,m),(8,k)):((1,T,SBO),(1T,LBO))
-* LayoutType::B32          : Swizzle<1,4,3> o smem_ptr o ((T,2,m),(8,k)):((1,T,LBO),(2T,SBO))
-* LayoutType::B64          : Swizzle<2,4,3> o smem_ptr o ((T,4,m),(8,k)):((1,T,LBO),(4T,SBO))
-* LayoutType::B128         : Swizzle<3,4,3> o smem_ptr o ((T,8,m),(8,k)):((1,T,LBO),(8T,SBO))
-*
-* where
-*   T  : sizeof(uint128_t) / sizeof(value_type)
-*   m  : integer in [1,16] corresponding to GMMA shape
-*   k  : integer in [1,32] corresponding to GMMA shape
-*   SBO: stride byte offset
-*   LBO: leading byte offset
-*
-* See GMMA::Layout_MN_XXX_Atom<value_type> for building canonical GmmaDescriptor Major-MN layouts.
-* For example,
-*   auto smem_layout = tile_to_shape(Layout_MN_SW128_Atom<value_type>{}, Shape<_128,_64>{});
-* is guaranteed to be accepted by make_gmma_desc<Major::MN> for appropriate value_type.
-*
-* //////////////////////////////
-* // make_gmma_desc<Major::K> //
-* //////////////////////////////
-* Each GmmaDescriptor Major-K describes a canonical layout of the form
-*
-* LayoutType::INTERLEAVE : Swizzle<0,4,3> o smem_ptr o ((8,m),(T,2)):((1T,SBO),(1,LBO))
-* LayoutType::B32        : Swizzle<1,4,3> o smem_ptr o ((8,m),(T,2)):((2T,SBO),(1, T ))
-* LayoutType::B64        : Swizzle<2,4,3> o smem_ptr o ((8,m),(T,2)):((4T,SBO),(1, T ))
-* LayoutType::B128       : Swizzle<3,4,3> o smem_ptr o ((8,m),(T,2)):((8T,SBO),(1, T ))
-*
-* See GMMA::Layout_K_XXX_Atom<value_type> for building canonical GmmaDescriptor Major-K layouts.
-* For example,
-*   auto smem_layout = tile_to_shape(Layout_K_SW128_Atom<value_type>{}, Shape<_128,_64>{});
-* is guaranteed to be accepted by make_gmma_desc<Major::K> for appropriate value_type.
 */
 template <Major MajorMode, class TEngine, class TLayout>
 CUTE_HOST_DEVICE constexpr
-GmmaDescriptor
-make_gmma_desc(Tensor<TEngine,TLayout> const& tensor)
+DMDescriptor
+make_dm_desc(Tensor<TEngine,TLayout> const& tensor)
 {
   static_assert(is_smem<TEngine>::value, "GMMA Descriptors can only be constructed on smem.");
   static_assert(TLayout::rank == 2, "GMMA Descriptors can only be constructed on rank-2 tensors.");
   using value_type = typename TEngine::value_type;
 
-  Tensor u128_tensor = recast<uint128_t const>(tensor);
+  // cast smem ptr to common ptr
+  auto raw_ptr = &tensor(0, 0);
+  uint32_t showPtr = static_cast<uint32_t>(reinterpret_cast<uintptr_t>(raw_ptr));
+
+  auto stride = tensor.layout().stride();
 
   // Result
-  GmmaDescriptor desc;
+  DMDescriptor desc;
+  desc.shape0 = size<0>(layout(tensor));
+  desc.shape1 = size<1>(layout(tensor));
+  desc.dmAddr = showPtr;
+  
+  // each value holds elementBytes bytes
+  constexpr uint32_t elementBytes = sizeof(value_type);
 
-  // Layout type
-  constexpr LayoutType LAYOUT_TYPE = layout_type(u128_tensor);
-  desc.bitfield.layout_type_ = uint8_t(LAYOUT_TYPE);
-
-  // Start address (4LSB not included)
-  uint32_t start_address = cast_smem_ptr_to_uint(raw_pointer_cast(u128_tensor.data()));
-  desc.bitfield.start_address_ = static_cast<uint16_t>(start_address >> 4);
-
-  constexpr uint8_t base_offset = 0;
-  desc.bitfield.base_offset_ = base_offset;
-
-  // LayoutType meta
-  constexpr int W = LAYOUT_TYPE == LayoutType::INTERLEAVE ? 1 :
-                    LAYOUT_TYPE == LayoutType::B32        ? 2 :
-                    LAYOUT_TYPE == LayoutType::B64        ? 4 :
-                    LAYOUT_TYPE == LayoutType::B128       ? 8 : -1;
-
-  if constexpr (MajorMode == Major::MN)
-  {
-    /* In units of uint128_t, each GmmaDescriptor Major-MN describes a canonical layout of the form
-     *
-     * LayoutType::INTERLEAVE         : Swizzle<0,4,3> o smem_ptr o ((1,n),(8,k)):((X,SBO),(1,LBO))
-     * LayoutType::B32                : Swizzle<1,4,3> o smem_ptr o ((2,n),(8,k)):((1,LBO),(2,SBO))
-     * LayoutType::B64                : Swizzle<2,4,3> o smem_ptr o ((4,n),(8,k)):((1,LBO),(4,SBO))
-     * LayoutType::B128               : Swizzle<3,4,3> o smem_ptr o ((8,n),(8,k)):((1,LBO),(8,SBO))
-     */
-    // static_assert(size<1>(u128_tensor) == Int<(256 / cute::sizeof_bits<value_type>::value)>{} || // A and B in dense MMA
-    //               size<1>(u128_tensor) == Int<(128 / cute::sizeof_bits<value_type>::value)>{} || // A in sparse MMA
-    //               size<1>(u128_tensor) == Int<(512 / cute::sizeof_bits<value_type>::value)>{},   // B in sparse MMA
-    //                      "Not a canonical GMMA_MN Layout: Expected K-size 256/sizeof_bits<T> for dense or (128|512)/sizeof_bits<T> for sparse.");
-
-    // Construct the canonical GMMA T Layout with shape ((W,n),(8,2))
-    Layout canonical_layout = logical_divide(layout(u128_tensor), make_tile(Layout<Int<W>,_1>{}, Layout<Int<8>,_1>{}));
-
-    // Check ranks of canonical
-    CUTE_STATIC_ASSERT_V(rank<0>(canonical_layout) == Int<2>{}, "Not a canonical GMMA_MN Layout: No flat offset mode");
-    CUTE_STATIC_ASSERT_V(rank<1>(canonical_layout) == Int<2>{}, "Not a canonical GMMA_MN Layout: No flat offset mode");
-    // Check canonical mode strides
-    constexpr uint32_t stride_00 = stride<0,0>(canonical_layout);
-    constexpr uint32_t expected_stride_00 = LAYOUT_TYPE == LayoutType::INTERLEAVE ? stride<0,0>(canonical_layout) : 1;
-    static_assert(stride_00 == expected_stride_00, "Not a canonical GMMA_MN Layout: Expected stride failure.");
-    constexpr uint32_t stride_10 = stride<1,0>(canonical_layout);
-    constexpr uint32_t expected_stride_10 = W;
-    //static_assert(stride_10 == expected_stride_10, "Not a canonical GMMA_MN Layout: Expected stride failure.");
-
-    // stride dimension byte offset and leading dimension byte offset (4LSB not included == uint128_t units)
-    constexpr uint32_t stride_01 = stride<0,1>(canonical_layout);
-    constexpr uint32_t stride_11 = stride<1,1>(canonical_layout);
-
-    desc.bitfield.stride_byte_offset_  = (LAYOUT_TYPE == LayoutType::INTERLEAVE) ? stride_01 : stride_11;
-    desc.bitfield.leading_byte_offset_ = (LAYOUT_TYPE == LayoutType::INTERLEAVE) ? stride_11 : stride_01;
-  }
-  else if constexpr (MajorMode == Major::K)
-  {
-    /* In units of uint128_t, each GmmaDescriptor Major-K describes a canonical layout of the form
-     *
-     * LayoutType::INTERLEAVE    : Swizzle<0,4,3> o smem_ptr o ((8,n),2):((1,SBO),LBO)
-     * LayoutType::B32           : Swizzle<1,4,3> o smem_ptr o ((8,n),2):((2,SBO),1)
-     * LayoutType::B64           : Swizzle<2,4,3> o smem_ptr o ((8,n),2):((4,SBO),1)
-     * LayoutType::B128          : Swizzle<3,4,3> o smem_ptr o ((8,n),2):((8,SBO),1)
-     */
-    CUTE_STATIC_ASSERT_V(size<0>(u128_tensor) % Int<8>{} == Int<0>{},          // N|M size
-                         "Not a canonical GMMA_K Layout: Expected MN-size multiple of 8.");
-    CUTE_STATIC_ASSERT_V(size<1>(u128_tensor) == Int<2>{} || size<1>(u128_tensor) == Int<4>{},      // K   size
-                         "Not a canonical GMMA_K Layout: Expected K-size 2 for dense or 4 for sparse (in units of uint128_t).");
-
-    // Construct the canonical GMMA N Layout with shape ((8,n),(2,1))
-    Layout canonical_layout = logical_divide(layout(u128_tensor), make_tile(Layout<_8,_1>{}, Layout<_2,_1>{}));
-
-    // Check ranks of canonical
-    CUTE_STATIC_ASSERT_V(rank<0>(canonical_layout) == Int<2>{}, "Not a canonical GMMA_K Layout: No flat offset mode");
-    CUTE_STATIC_ASSERT_V(rank<1>(canonical_layout) == Int<2>{}, "Not a canonical GMMA_K Layout: No flat offset mode");
-    // Check canonical mode strides
-    constexpr uint32_t stride_00 = stride<0,0>(canonical_layout);
-    constexpr uint32_t expected_stride_00 = W;
-    static_assert(stride_00 == expected_stride_00, "Not a canonical GMMA_K Layout: Expected stride failure.");
-    constexpr uint32_t stride_10 = stride<1,0>(canonical_layout);
-    constexpr uint32_t expected_stride_10 = (LAYOUT_TYPE == LayoutType::INTERLEAVE) ? stride<1,0>(canonical_layout) : 1;
-    static_assert(stride_10 == expected_stride_10, "Not a canonical GMMA_K Layout: Expected stride failure.");
-
-    // stride dimension byte offset and leading dimension byte offset (4LSB not included == uint128_t units)
-    constexpr uint32_t stride_01 = stride<0,1>(canonical_layout);
-
-    desc.bitfield.stride_byte_offset_  = stride_01;
-    desc.bitfield.leading_byte_offset_ = stride_10;
+  if constexpr (MajorMode == Major::MN) { //column major
+    desc.strideByteOffset = get<1>(stride) * elementBytes;
+  } else if constexpr (MajorMode == Major::K) { //row major
+    desc.strideByteOffset = get<0>(stride) * elementBytes;
   } else {
     static_assert(MajorMode != Major::MN && MajorMode != Major::K, "Unrecognized MajorMode!");
   }
+
   return desc;
 }
 
@@ -304,19 +171,19 @@ make_gmma_desc(Tensor<TEngine,TLayout> const& tensor)
 // Higher level GMMA Descriptor utilities
 ///////////////////////////////////////////////////////////////////////////////
 
-struct DescriptorIterator
+struct DMDescriptorIterator
 {
-  using reference    = GmmaDescriptor;
-  using element_type = GmmaDescriptor;
-  using value_type   = GmmaDescriptor;
+  using reference    = DMDescriptor;
+  using element_type = DMDescriptor;
+  using value_type   = DMDescriptor;
 
-  GmmaDescriptor desc_;
+  DMDescriptor dmDesc;
 
-  // Dereference returns the GmmaDescriptor
+  // Dereference returns the DMDescriptor
   CUTE_HOST_DEVICE constexpr
-  reference operator*() const { return desc_; }
+  reference operator*() const { return dmDesc; }
 
-  // Advance and return a new GmmaDescriptor
+  // Advance and return a new DMDescriptor
   template <class Index>
   CUTE_HOST_DEVICE constexpr
   reference operator[](Index const& i) const { return *(*this + i); }
@@ -324,37 +191,47 @@ struct DescriptorIterator
   // Return an advanced iterator
   template <class Index>
   CUTE_HOST_DEVICE constexpr
-  DescriptorIterator operator+(Index const& offset) const
+  DMDescriptorIterator operator+(Index const& i) const
   {
-    return { GmmaDescriptor{desc_ + uint64_t(offset)} };
+    // each index i corresponds to a k-tile stride
+    uint32_t byteOffset = static_cast<uint32_t>(i) * dmDesc.strideByteOffset;
+    return { dmDesc + byteOffset };
   }
 };
 
 template <class T>
 CUTE_HOST_DEVICE constexpr
-GmmaDescriptor
-raw_pointer_cast(DescriptorIterator const& ptr) {
-  return ptr.desc_;
+DMDescriptor
+raw_pointer_cast(DMDescriptorIterator const& ptr) {
+  return ptr.dmDesc;
 }
 
-// Recast a DescriptorIterator Tensor to uint64_t, it's RegType in mma_unpack
+// Recast a DMDescriptorIterator Tensor to uint64_t, it's RegType in mma_unpack
 template <class NewT>
 CUTE_HOST_DEVICE constexpr
-DescriptorIterator
-recast_ptr(DescriptorIterator const& iter) {
-  static_assert(is_same<NewT, uint64_t>::value, "Can only cast GmmaDescriptorIterator to uint64_t.");
-  return iter;  // Do nothing, it will still dereference to GmmaDescriptor and decay to uint64_t
+DMDescriptorIterator
+recast_ptr(DMDescriptorIterator const& iter) {
+  static_assert(is_same<NewT, uint32_t>::value, "Can only cast DMDMDescriptorIterator to uint32_t.");
+  return iter;  // Do nothing, it will still dereference to DMDescriptor and decay to uint64_t
 }
 
 CUTE_HOST_DEVICE void
-print(DescriptorIterator) {
-  printf("GMMA::DescriptorIterator");
+print(DMDescriptorIterator) {
+  printf("GMMA::DMDescriptorIterator");
 }
 
 // The GMMA Traits below have custom fragment type flags for their smem desc tensors.
 // These flags specialize a MakeTensor customization point to correctly make the fragment that is desired.
 template <Major>
-struct smem_desc : DescriptorIterator {};
+struct smem_desc : DMDescriptorIterator {
+  // cast from base DMDescriptorIterator
+  CUTE_HOST_DEVICE constexpr 
+  smem_desc(DMDescriptorIterator const& iter) : DMDescriptorIterator(iter) {}
+  
+  // construct by DMDescriptor
+  CUTE_HOST_DEVICE constexpr 
+  smem_desc(DMDescriptor const& desc) : DMDescriptorIterator{desc} {}
+};
 
 } // end namespace MPU::GMMA
 
@@ -367,10 +244,13 @@ struct MakeTensor<MPU::GMMA::smem_desc<MajorMode>>
   operator()(Tensor<TEngine,TLayout> const& smem_tensor)
   {
     static_assert(is_smem<TEngine>::value, "Expected SMEM Tensor to construct a GMMA Desc Tensor");
-    return make_tensor(MPU::GMMA::DescriptorIterator{MPU::GMMA::make_gmma_desc<MajorMode>(tensor<0>(smem_tensor))},
-                       replace<0>(recast<uint128_t const>(smem_tensor).layout(), Layout<_1,_0>{}));
+    // return make_tensor(MPU::GMMA::DMDescriptorIterator{MPU::GMMA::make_dm_desc<MajorMode>(tensor<0>(smem_tensor))},
+    //                    replace<0>(recast<uint128_t const>(smem_tensor).layout(), Layout<_1,_0>{}));
+    return make_tensor(MPU::GMMA::DMDescriptorIterator{MPU::GMMA::make_dm_desc<MajorMode>(tensor<0>(smem_tensor))},
+                       replace<0>(smem_tensor.layout(), Layout<_1,_0>{}));
   }
 };
+
 
 ///////////////////////////////////////////////////////////////////////////////
 //////////////////////////// MMA_TRAITS ///////////////////////////////////////
@@ -400,34 +280,33 @@ mma_unpack(MMA_Traits<MMA_Op, MMA_Args...> const& traits,
   static_assert(is_rmem<TB>::value, "Expected registers in MMA_Atom::call");
   static_assert(is_rmem<TC>::value, "Expected registers in MMA_Atom::call");
 
-  // Register value types from the MMA_Operation register arrays
-  using RegTypeA = typename remove_extent<typename MMA_Op::ARegisters>::type;
-  using RegTypeB = typename remove_extent<typename MMA_Op::BRegisters>::type;
-  using RegTypeC = typename remove_extent<typename MMA_Op::CRegisters>::type;
-
   // SM90 GMMA take three arguments rather than four, try to assert C and D are aliased
   static_assert(is_same<typename TD::value_type, typename TC::value_type>::value, "GMMA C and D value_type must match.");
   static_assert(is_same<DLayout, CLayout>::value, "GMMA C and D layouts must match.");
-  // assert((void*)&C == (void*)&D);
+  assert((void*)&C == (void*)&D);
 
-  Tensor rA = recast<RegTypeA>(A);
-  Tensor rB = recast<RegTypeB>(B);
-  Tensor rC = recast<RegTypeC>(D);  // NOTE: D and C are same, so use mutable D
+  uint32_t m = A.data().dmDesc.shape0;
+  uint32_t n = B.data().dmDesc.shape0;
+  uint32_t k = A.data().dmDesc.shape1;
+  uint16_t alpha = 0;
 
-  constexpr int RegNumA = extent<typename MMA_Op::ARegisters>::value;
-  constexpr int RegNumB = extent<typename MMA_Op::BRegisters>::value;
-  constexpr int RegNumC = extent<typename MMA_Op::CRegisters>::value;
+  assert(m == get<0>(shape(C)));       //A.M = C.M
+  assert(n == get<1>(shape(C)));       //A.N = C.N
+  assert(k == B.data().dmDesc.shape1); //A.K = B.K
 
-  CUTE_STATIC_ASSERT_V(size(rA) == Int<RegNumA>{});
-  CUTE_STATIC_ASSERT_V(size(rB) == Int<RegNumB>{});
-  // CUTE_STATIC_ASSERT_V(size(rC) == Int<RegNumC>{});
+  uint64_t addressA = A.data().dmDesc.dmAddr;
+  uint64_t addressB = B.data().dmDesc.dmAddr;
+  uint64_t addressC = C.data().dmDesc.dmAddr;
+  
+  auto matrixA = reinterpret_cast<void*>(addressA);
+  auto matrixB = reinterpret_cast<void*>(addressB);
+  auto matrixC = reinterpret_cast<void*>(addressC);
 
-  detail::explode(MMA_Op::fma,
-                  rA, make_int_sequence<RegNumA>{},
-                  rB, make_int_sequence<RegNumB>{},
-                  rC, make_int_sequence<RegNumC>{},
-                  &(traits.accumulate_), seq<0>{});
+  //call APE calculate
+  MMA_Op::gemmKernel(alpha, m, n, k, matrixA, matrixB, matrixC);
 }
+
+
 
 // Accumulator layouts
 template<int N>
@@ -461,7 +340,7 @@ using ALayout_64x64  = Layout<Shape <Shape <  _4,_8, _4>,Shape < _8,_2,   _2>>,
 
 // Shared memory source layouts for any value type
 template <int M, int K>
-using ABLayout       = Layout<Shape <_128,Shape <Int<M>,Int<K>>>,
+using ABLayout       = Layout<Shape <_1,Shape <Int<M>,Int<K>>>,
                               Stride<  _0,Stride<    _1,Int<M>>>>;
 
 } // end namespace MPU::GMMA
@@ -486,6 +365,7 @@ struct MMA_Traits<MPU_64x64x16_F16F16F16_4x1_SS<tnspA, tnspB, scaleA, scaleB>>
 
   using FrgTypeA = MPU::GMMA::smem_desc<tnspA>;
   using FrgTypeB = MPU::GMMA::smem_desc<tnspB>;
+  using FrgTypeC = MPU::GMMA::smem_desc<tnspA>;
 
   using Shape_MNK = Shape<_64,_64,_16>;
   using ThrID   = Layout<_1>;
@@ -515,6 +395,7 @@ struct MMA_Traits<MPU_128x128x64_F32F32F32_4x1_SS<tnspA, tnspB, scaleA, scaleB>>
 
   using FrgTypeA = MPU::GMMA::smem_desc<tnspA>;
   using FrgTypeB = MPU::GMMA::smem_desc<tnspB>;
+  using FrgTypeC = MPU::GMMA::smem_desc<tnspA>;
 
   using Shape_MNK = Shape<_128,_128,_64>;
   using ThrID   = Layout<_1>;

@@ -34,10 +34,8 @@
 #include <cute/pointer_sparse.hpp>             // cute::smem_sparse_ptr_flag
 #include <cute/swizzle.hpp>                    // cute::Swizzle
 #include <cute/tensor_impl.hpp>                // cute::Tensor
-// #include <cute/arch/mma_sm90_desc.hpp>         // cute::LayoutType
 #include <cute/arch/mma_mpu_desc.hpp>         // cute::LayoutType
-//#include <cute/arch/mma_sm90_gmma.hpp>         // cute::SM90_64x8x16_F16F16F16_SS, etc
-#include <cute/arch/mma_mpu_gmma.hpp>
+#include <cute/arch/mma_mpu_gmma.hpp>            // MPU_64x64x16_F16F16F16_SS, etc
 #include <cute/atom/mma_traits.hpp>            // cute::MMA_Traits
 #include <cute/layout_composed.hpp>            // cute::ComposedLayout
 #include <cute/numeric/integral_constant.hpp>  // cute::is_static
@@ -153,13 +151,14 @@ make_dm_desc(Tensor<TEngine,TLayout> const& tensor)
   desc.shape1 = size<1>(layout(tensor));
   desc.dmAddr = showPtr;
   
-  // each value holds elementBytes bytes
-  constexpr uint32_t elementBytes = sizeof(value_type);
+  // each value holds elementByte bytes
+  constexpr uint32_t elementByte = sizeof(value_type);
+  desc.elementByte = elementByte;
 
   if constexpr (MajorMode == Major::MN) { //column major
-    desc.strideByteOffset = get<1>(stride) * elementBytes;
+    desc.strideByteOffset = get<1>(stride) * elementByte;
   } else if constexpr (MajorMode == Major::K) { //row major
-    desc.strideByteOffset = get<0>(stride) * elementBytes;
+    desc.strideByteOffset = get<0>(stride) * elementByte;
   } else {
     static_assert(MajorMode != Major::MN && MajorMode != Major::K, "Unrecognized MajorMode!");
   }
@@ -194,8 +193,8 @@ struct DMDescriptorIterator
   DMDescriptorIterator operator+(Index const& i) const
   {
     // each index i corresponds to a k-tile stride
-    uint32_t byteOffset = static_cast<uint32_t>(i) * dmDesc.strideByteOffset;
-    return { dmDesc + byteOffset };
+    uint32_t addrByteOffset = static_cast<uint32_t>(i) * dmDesc.elementByte;//传入的i单位是element
+    return { dmDesc + addrByteOffset };
   }
 };
 
@@ -307,7 +306,6 @@ mma_unpack(MMA_Traits<MMA_Op, MMA_Args...> const& traits,
 }
 
 
-
 // Accumulator layouts
 template<int N>
 using CLayout_64xN   = Layout<Shape <Shape <  _4,_8, _4>,Shape < _2,_2,Int<N/8>>>,
@@ -321,22 +319,6 @@ using CLayout_64x96  = CLayout_64xN< 96>;
 using CLayout_64x128 = CLayout_64xN<128>;
 using CLayout_64x192 = CLayout_64xN<192>;
 using CLayout_64x256 = CLayout_64xN<256>;
-
-// Register source layout for 32-bit value types
-using ALayout_64x8   = Layout<Shape <Shape <  _4,_8, _4>,Shape <    _2,  _2>>,
-                              Stride<Stride< _64,_1,_16>,Stride<    _8,_256>>>;
-
-// Register source layout for 16-bit (sparse 32-bit) value types
-using ALayout_64x16  = Layout<Shape <Shape <  _4,_8, _4>,Shape < _2,_2,  _2>>,
-                              Stride<Stride<_128,_1,_16>,Stride<_64,_8,_512>>>;
-
-// Register source layout for 8-bit (sparse 16-bit) value types
-using ALayout_64x32  = Layout<Shape <Shape <  _4,_8, _4>,Shape < _4,_2,   _2>>,
-                              Stride<Stride<_256,_1,_16>,Stride<_64,_8,_1024>>>;
-
-// Register source layout for sparse 8-bit value types
-using ALayout_64x64  = Layout<Shape <Shape <  _4,_8, _4>,Shape < _8,_2,   _2>>,
-                              Stride<Stride<_512,_1,_16>,Stride<_64,_8,_2048>>>;
 
 // Shared memory source layouts for any value type
 template <int M, int K>
@@ -353,7 +335,8 @@ template <
   MPU::GMMA::ScaleIn  scaleA = MPU::GMMA::ScaleIn::One,
   MPU::GMMA::ScaleIn  scaleB = MPU::GMMA::ScaleIn::One
 >
-using MPU_64x64x16_F16F16F16_4x1_SS = MPU::GMMA::MMA_64x64x16_F16F16F16_SS<tnspA, tnspB, scaleA, scaleB>;
+struct MPU_64x64x16_F16F16F16_4x1_SS : public MPU::GMMA::MMA_64x64x16_F32F32F32_SS<
+  tnspA, tnspB, scaleA, scaleB, MPU_64x64x16_F16F16F16_4x1_SS<tnspA, tnspB, scaleA, scaleB>> {};
 
 template <MPU::GMMA::Major tnspA, MPU::GMMA::Major tnspB, MPU::GMMA::ScaleIn scaleA, MPU::GMMA::ScaleIn scaleB>
 struct MMA_Traits<MPU_64x64x16_F16F16F16_4x1_SS<tnspA, tnspB, scaleA, scaleB>>
@@ -377,18 +360,119 @@ struct MMA_Traits<MPU_64x64x16_F16F16F16_4x1_SS<tnspA, tnspB, scaleA, scaleB>>
   MPU::GMMA::ScaleOut accumulate_ = MPU::GMMA::ScaleOut::One;
 };
 
+////////////////////////////////////////////////////////////////////////
 template <
   MPU::GMMA::Major tnspA,
   MPU::GMMA::Major tnspB,
   MPU::GMMA::ScaleIn  scaleA = MPU::GMMA::ScaleIn::One,
   MPU::GMMA::ScaleIn  scaleB = MPU::GMMA::ScaleIn::One
 >
-using MPU_128x128x64_F32F32F32_4x1_SS = MPU::GMMA::MMA_128x128x64_F32F32F32_SS<tnspA, tnspB, scaleA, scaleB>;
+struct MPU_64x64x16_F32F32F32_4x1_SS : public MPU::GMMA::MMA_64x64x16_F32F32F32_SS<
+      tnspA, tnspB, scaleA, scaleB, MPU_64x64x16_F32F32F32_4x1_SS<tnspA, tnspB, scaleA, scaleB>> {};
+
+template <MPU::GMMA::Major tnspA, MPU::GMMA::Major tnspB, MPU::GMMA::ScaleIn scaleA, MPU::GMMA::ScaleIn scaleB>
+struct MMA_Traits<MPU_64x64x16_F32F32F32_4x1_SS<tnspA, tnspB, scaleA, scaleB>>
+{
+  using ValTypeD = float;
+  using ValTypeA = float;
+  using ValTypeB = float;
+  using ValTypeC = float;
+
+  using FrgTypeA = MPU::GMMA::smem_desc<tnspA>;
+  using FrgTypeB = MPU::GMMA::smem_desc<tnspB>;
+  using FrgTypeC = MPU::GMMA::smem_desc<tnspA>;
+
+  using Shape_MNK = Shape<_64,_64,_16>;
+  using ThrID   = Layout<_1>;
+  using ALayout = MPU::GMMA::ABLayout< 64, 16>;
+  using BLayout = MPU::GMMA::ABLayout< 64, 16>;
+  using CLayout = MPU::GMMA::CLayout_64x64;
+  using APELayoutMNK = Layout<Shape<_4, _1, _1>>;    //APE layout
+
+  MPU::GMMA::ScaleOut accumulate_ = MPU::GMMA::ScaleOut::One;
+};
+
+////////////////////////////////////////////////////////////////////////
+
+template <
+  MPU::GMMA::Major tnspA,
+  MPU::GMMA::Major tnspB,
+  MPU::GMMA::ScaleIn  scaleA = MPU::GMMA::ScaleIn::One,
+  MPU::GMMA::ScaleIn  scaleB = MPU::GMMA::ScaleIn::One
+>
+struct MPU_64x64x16_F32F32F32_1x4_SS : public MPU::GMMA::MMA_64x64x16_F32F32F32_SS<
+      tnspA, tnspB, scaleA, scaleB, MPU_64x64x16_F32F32F32_1x4_SS<tnspA, tnspB, scaleA, scaleB>> {};
+
+template <MPU::GMMA::Major tnspA, MPU::GMMA::Major tnspB, MPU::GMMA::ScaleIn scaleA, MPU::GMMA::ScaleIn scaleB>
+struct MMA_Traits<MPU_64x64x16_F32F32F32_1x4_SS<tnspA, tnspB, scaleA, scaleB>>
+{
+  using ValTypeD = float;
+  using ValTypeA = float;
+  using ValTypeB = float;
+  using ValTypeC = float;
+
+  using FrgTypeA = MPU::GMMA::smem_desc<tnspA>;
+  using FrgTypeB = MPU::GMMA::smem_desc<tnspB>;
+  using FrgTypeC = MPU::GMMA::smem_desc<tnspA>;
+
+  using Shape_MNK = Shape<_64,_64,_16>;
+  using ThrID   = Layout<_1>;
+  using ALayout = MPU::GMMA::ABLayout< 64, 16>;
+  using BLayout = MPU::GMMA::ABLayout< 64, 16>;
+  using CLayout = MPU::GMMA::CLayout_64x64;
+  using APELayoutMNK = Layout<Shape<_1, _4, _1>>;    //APE layout
+
+  MPU::GMMA::ScaleOut accumulate_ = MPU::GMMA::ScaleOut::One;
+};
+
+///////////////////////////////////////////////////////////////////////
+
+template <
+  MPU::GMMA::Major tnspA,
+  MPU::GMMA::Major tnspB,
+  MPU::GMMA::ScaleIn  scaleA = MPU::GMMA::ScaleIn::One,
+  MPU::GMMA::ScaleIn  scaleB = MPU::GMMA::ScaleIn::One
+>
+struct MPU_64x64x16_F32F32F32_2x2_SS : public MPU::GMMA::MMA_64x64x16_F32F32F32_SS<
+      tnspA, tnspB, scaleA, scaleB, MPU_64x64x16_F32F32F32_2x2_SS<tnspA, tnspB, scaleA, scaleB>> {};
+
+template <MPU::GMMA::Major tnspA, MPU::GMMA::Major tnspB, MPU::GMMA::ScaleIn scaleA, MPU::GMMA::ScaleIn scaleB>
+struct MMA_Traits<MPU_64x64x16_F32F32F32_2x2_SS<tnspA, tnspB, scaleA, scaleB>>
+{
+  using ValTypeD = float;
+  using ValTypeA = float;
+  using ValTypeB = float;
+  using ValTypeC = float;
+
+  using FrgTypeA = MPU::GMMA::smem_desc<tnspA>;
+  using FrgTypeB = MPU::GMMA::smem_desc<tnspB>;
+  using FrgTypeC = MPU::GMMA::smem_desc<tnspA>;
+
+  using Shape_MNK = Shape<_64,_64,_16>;
+  using ThrID   = Layout<_1>;
+  using ALayout = MPU::GMMA::ABLayout< 64, 16>;
+  using BLayout = MPU::GMMA::ABLayout< 64, 16>;
+  using CLayout = MPU::GMMA::CLayout_64x64;
+  using APELayoutMNK = Layout<Shape<_2, _2, _1>>;    //APE layout
+
+  MPU::GMMA::ScaleOut accumulate_ = MPU::GMMA::ScaleOut::One;
+};
+
+///////////////////////////////////////////////////////////////////////
+
+template <
+  MPU::GMMA::Major tnspA,
+  MPU::GMMA::Major tnspB,
+  MPU::GMMA::ScaleIn  scaleA = MPU::GMMA::ScaleIn::One,
+  MPU::GMMA::ScaleIn  scaleB = MPU::GMMA::ScaleIn::One
+>
+struct MPU_128x128x64_F32F32F32_4x1_SS : public MPU::GMMA::MMA_64x64x16_F32F32F32_SS<
+      tnspA, tnspB, scaleA, scaleB, MPU_128x128x64_F32F32F32_4x1_SS<tnspA, tnspB, scaleA, scaleB>> {};
 
 template <MPU::GMMA::Major tnspA, MPU::GMMA::Major tnspB, MPU::GMMA::ScaleIn scaleA, MPU::GMMA::ScaleIn scaleB>
 struct MMA_Traits<MPU_128x128x64_F32F32F32_4x1_SS<tnspA, tnspB, scaleA, scaleB>>
 {
-  using ValTypeD = float;    //half_t if use float, then tma copy will report error
+  using ValTypeD = float;
   using ValTypeA = float;
   using ValTypeB = float;
   using ValTypeC = float;
@@ -408,7 +492,3 @@ struct MMA_Traits<MPU_128x128x64_F32F32F32_4x1_SS<tnspA, tnspB, scaleA, scaleB>>
 };
 
 } // end namespace cute
-
-#if defined(CUTE_SM90_EXTENDED_MMA_SHAPES_ENABLED)
-#include "mma_traits_sm90_gmma_ext.hpp"
-#endif

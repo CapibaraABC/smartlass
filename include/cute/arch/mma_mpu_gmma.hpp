@@ -134,7 +134,8 @@ template <
   GMMA::Major tnspA,
   GMMA::Major tnspB,
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
-  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One,
+  class Tag = void
 >
 struct MMA_64x64x16_F16F16F16_SS
 {
@@ -177,12 +178,62 @@ struct MMA_64x64x16_F16F16F16_SS
   }
 };
 
+// GMMA 64x64x16 F32+=F32*F32
+template <
+  GMMA::Major tnspA,
+  GMMA::Major tnspB,
+  GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One,
+  class Tag = void
+>
+struct MMA_64x64x16_F32F32F32_SS
+{
+  using DRegisters = void;
+  using ARegisters = uint64_t[1];
+  using BRegisters = uint64_t[1];
+  using CRegisters = uint32_t[16];
+
+  // APE calculate
+  CUTE_HOST_DEVICE static void
+  gemmKernel(uint16_t const alpha, 
+           uint32_t const m, 
+           uint32_t const n, 
+           uint32_t const k,
+           void* const MatrixA, 
+           void* const MatrixB, 
+           void* const MatrixC){
+            {
+              uint y = threadIdx.y + blockIdx.y * blockDim.y;
+              uint x = threadIdx.x + blockIdx.x * blockDim.x + gridDim.x * blockDim.x * y;
+              // if (x == 0) {
+                printf("MMA_64x64x16_F32F32F32_SS, alpha:%u, m:%u, n:%u, k:%u\n", alpha, m, n, k);
+                printf("MatrixA:%p, MatrixB:%p, MatrixC:%p\n", MatrixA, MatrixB, MatrixC);
+              // }
+            }
+  }
+
+  CUTE_HOST_DEVICE static void
+  fma(uint64_t const& desc_a,
+      uint64_t const& desc_b,
+      uint32_t      & d00, uint32_t      & d01, uint32_t      & d02, uint32_t      & d03,
+      uint32_t      & d04, uint32_t      & d05, uint32_t      & d06, uint32_t      & d07,
+      uint32_t      & d08, uint32_t      & d09, uint32_t      & d10, uint32_t      & d11,
+      uint32_t      & d12, uint32_t      & d13, uint32_t      & d14, uint32_t      & d15,
+      GMMA::ScaleOut const scale_D = GMMA::ScaleOut::One)
+  {
+    // if(thread0() && blockIdx.x == 0 && blockIdx.y == 0 && blockIdx.z == 0) {// 
+      printf("threadIdx.x:%d, call MMAOperation::MMA_64x64x16_F32F32F32_SS.\n", threadIdx.x);
+    // }
+  }
+};
+
 // GEMM 128x128x64 F32+=F32*F32
 template <
   GMMA::Major tnspA,
   GMMA::Major tnspB,
   GMMA::ScaleIn  scaleA = GMMA::ScaleIn::One,
-  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One
+  GMMA::ScaleIn  scaleB = GMMA::ScaleIn::One,
+  class Tag = void
 >
 struct MMA_128x128x64_F32F32F32_SS
 {
@@ -190,6 +241,25 @@ struct MMA_128x128x64_F32F32F32_SS
   using ARegisters = uint64_t[1];
   using BRegisters = uint64_t[1];
   using CRegisters = uint32_t[16];
+
+  // APE calculate
+  CUTE_HOST_DEVICE static void
+  gemmKernel(uint16_t const alpha, 
+           uint32_t const m, 
+           uint32_t const n, 
+           uint32_t const k,
+           void* const MatrixA, 
+           void* const MatrixB, 
+           void* const MatrixC){
+            {
+              uint y = threadIdx.y + blockIdx.y * blockDim.y;
+              uint x = threadIdx.x + blockIdx.x * blockDim.x + gridDim.x * blockDim.x * y;
+              // if (x == 0) {
+                printf("alpha:%u, m:%u, n:%u, k:%u\n", alpha, m, n, k);
+                printf("MatrixA:%p, MatrixB:%p, MatrixC:%p\n", MatrixA, MatrixB, MatrixC);
+              // }
+            }
+  }
 
   CUTE_HOST_DEVICE static void
   fma(uint64_t const& desc_a,

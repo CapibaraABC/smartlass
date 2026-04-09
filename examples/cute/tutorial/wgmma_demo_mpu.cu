@@ -414,7 +414,8 @@ gemm(char transA, char transB, int m, int n, int k,
 {
   if (transA == 'N' && transB == 'T') {
     return gemm_nt(m, n, k, alpha, A, ldA, B, ldB, beta, C, ldC, stream);
-  } else
+  } 
+  // else
   // if (transA == 'T' && transB == 'N') {
   //   return gemm_tn(m, n, k, alpha, A, ldA, B, ldB, beta, C, ldC, stream);
   // }

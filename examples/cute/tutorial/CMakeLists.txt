@@ -58,9 +58,14 @@
 #   wgmma_sm90.cu
 # )
 
+# cutlass_example_add_executable(
+#   wgmma_demo_mpu
+#   wgmma_demo_mpu.cu
+# )
+
 cutlass_example_add_executable(
-  wgmma_demo_mpu
-  wgmma_demo_mpu.cu
+  wgmma_demo_mpu_fp32
+  wgmma_demo_mpu_fp32.cu
 )
 
 # cutlass_example_add_executable(

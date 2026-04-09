@@ -88,17 +88,18 @@ struct DMDescriptor
   uint32_t shape0;    //M for matrixA, N for matrixB, M for matrixC
   uint32_t shape1;    //K for matrixA, K for matrixB, N for matrixC
 
-  uint32_t dmAddr;    //start addr for DM
+  uint32_t dmAddr;            //start addr for DM
   uint32_t strideByteOffset;  //stride offset in bytes between to k-tile mma_atom
+  uint8_t  elementByte;       //byte of each element, to calculate the stride by slicing
 
   CUTE_HOST_DEVICE constexpr
-  DMDescriptor() noexcept : shape0(0), shape1(1), dmAddr(0x0), strideByteOffset(0) {}
+  DMDescriptor() noexcept : shape0(0), shape1(1), dmAddr(0x0), strideByteOffset(0), elementByte(0) {}
   CUTE_HOST_DEVICE constexpr
-  DMDescriptor(uint32_t s0, uint32_t s1, uint32_t dm, uint32_t stride = 0) noexcept : shape0(s0), shape1(s1), dmAddr(dm), strideByteOffset(stride) {}
+  DMDescriptor(uint32_t s0, uint32_t s1, uint32_t dm, uint32_t stride = 0, uint8_t eByte = 0) noexcept : shape0(s0), shape1(s1), dmAddr(dm), strideByteOffset(stride), elementByte(eByte) {}
   CUTE_HOST_DEVICE constexpr
-  DMDescriptor(DMDescriptor const& t) noexcept : shape0(t.shape0), shape1(t.shape1), dmAddr(t.dmAddr), strideByteOffset(t.strideByteOffset) {}
+  DMDescriptor(DMDescriptor const& t) noexcept : shape0(t.shape0), shape1(t.shape1), dmAddr(t.dmAddr), strideByteOffset(t.strideByteOffset), elementByte(t.elementByte) {}
   CUTE_HOST_DEVICE constexpr
-  DMDescriptor(DMDescriptor && t) noexcept : shape0(t.shape0), shape1(t.shape1), dmAddr(t.dmAddr), strideByteOffset(t.strideByteOffset) {}
+  DMDescriptor(DMDescriptor && t) noexcept : shape0(t.shape0), shape1(t.shape1), dmAddr(t.dmAddr), strideByteOffset(t.strideByteOffset), elementByte(t.elementByte) {}
 
   CUTE_HOST_DEVICE constexpr
   DMDescriptor& operator=(DMDescriptor const& t) noexcept {
@@ -106,6 +107,7 @@ struct DMDescriptor
     shape1 = t.shape1;
     dmAddr = t.dmAddr;
     strideByteOffset = t.strideByteOffset;
+    elementByte = t.elementByte;
     return *this;
   }
 
@@ -115,6 +117,7 @@ struct DMDescriptor
     shape1 = t.shape1;
     dmAddr = t.dmAddr;
     strideByteOffset = t.strideByteOffset;
+    elementByte = t.elementByte;
     return *this;
   }
 
@@ -124,8 +127,8 @@ struct DMDescriptor
 };
 
 CUTE_HOST_DEVICE constexpr
-DMDescriptor operator+(DMDescriptor const& lhs, uint32_t rhs) noexcept {
-  return DMDescriptor(lhs.shape0, lhs.shape1, lhs.dmAddr + rhs, lhs.strideByteOffset);
+DMDescriptor operator+(DMDescriptor const& lhs, uint32_t addrOffsetByte) noexcept {
+  return DMDescriptor(lhs.shape0, lhs.shape1, lhs.dmAddr + addrOffsetByte, lhs.strideByteOffset, lhs.elementByte);
 }
 
 // Printer

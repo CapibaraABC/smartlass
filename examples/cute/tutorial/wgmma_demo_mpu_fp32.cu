@@ -35,7 +35,7 @@
 #include <thrust/host_vector.h>
 #include <thrust/device_vector.h>
 
-#include <cute/tensor.hpp>
+#include <cute/tensor_mpu.hpp>
 #include <cute/arch/mma_mpu_gmma.hpp>
 
 #include "cutlass/cluster_launch.hpp"
@@ -52,7 +52,8 @@
 #define BN 128
 #define BK 32
 
-using namespace cute;
+// using namespace cute;
+using namespace maxl;
 
 template <class ElementC,
           class SmemLayoutC>  // (M,N,P)
@@ -255,7 +256,7 @@ gemm_nt(int m, int n, int k,
   auto bM = Int<BM>{};//256
   auto bN = Int<BN>{};//64
   auto bK = Int< BK>{};//16
-  auto cta_tiler = make_shape(bM, bN, bK);                   // (BLK_M, BLK_N, BLK_K)
+  auto cta_tiler = maxl::make_shape(bM, bN, bK);                   // (BLK_M, BLK_N, BLK_K)
   auto bP = Int<  1>{};  // Pipeline 3
 
   // Define the smem layouts (static)

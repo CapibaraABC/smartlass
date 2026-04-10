@@ -31,29 +31,15 @@
 
 #pragma once
 
-#include <cute/config.hpp>
-#include <cute/arch/mma.hpp>
-
-// Config
-#if defined(__CUDA_ARCH__) && (__CUDA_ARCH__ >= 900)
-#    define CUTE_ARCH_MMA_SM90_ENABLED
-#    define CUTE_ARCH_MMA_F64_SM90_ENABLED
-#endif
-
+// #include <cute/config.hpp>
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-
-////////////////////////////////////////////////////////////////////////////////////////////////////
-
-#include <cute/arch/mma_sm90_desc.hpp>
-// #include <cute/arch/mma_sm90_gmma.hpp>
-#include <cute/atom/mma_traits_mpu.hpp>
-#include <cute/arch/mma_mpu_gmma.hpp>
-#include <cute/arch/mma_sm90_gmma_sparse.hpp>
-#include <cute/layout.hpp>                     // cute::size
-#include <cute/numeric/integral_constant.hpp>  // cute::is_static
+#include <cute/atom/mma_traits_mpu.hpp>       //MPU_128x128x64_F32F32F32_4x1_SS
+#include <cute/arch/mma_mpu_gmma.hpp>         //MPU::GMMA::Major
+#include <cute/layout_mpu.hpp>                 // cute::size
+#include <cute/numeric/integral_constant_mpu.hpp>  // cute::is_static
 #include <cute/numeric/numeric_types.hpp>      // cute::half_t, cute::float_e4m3_t, cute::tfloat32_t, etc
-#include <cute/util/type_traits.hpp>           // cute::is_same_v
+#include <cute/util/type_traits_mpu.hpp>           // cute::is_same_v
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -100,11 +86,11 @@ ss_op_selector()
 {
   static_assert(is_static<TileShape_MNK>::value, "TileShape_MNK must be static.");
   static_assert(rank(TileShape_MNK{}) == 3, "TileShape_MNK must be rank 3.");
-  static_assert(size<0>(TileShape_MNK{}) % 64 == 0, "Tile_M must be a multiple of 64.");
+  static_assert(maxl::size<0>(TileShape_MNK{}) % 64 == 0, "Tile_M must be a multiple of 64.");
 
-  constexpr int tileM = size<0>(TileShape_MNK{});
-  constexpr int tileN = size<1>(TileShape_MNK{});
-  constexpr int tileK = size<2>(TileShape_MNK{});
+  constexpr int tileM = maxl::size<0>(TileShape_MNK{});
+  constexpr int tileN = maxl::size<1>(TileShape_MNK{});
+  constexpr int tileK = maxl::size<2>(TileShape_MNK{});
 
   if(thread0()) {
     print("tileM:"); print(tileM); print("\n");

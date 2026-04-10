@@ -34,6 +34,98 @@
 #include <cute/util/type_traits_mpu.hpp>
 #include <cute/numeric/integral_constant_mpu.hpp>
 
+namespace maxl
+{
+using std::integer_sequence;
+using std::make_integer_sequence;
+
+namespace detail {
+
+template <class T, class S, T Begin>
+struct range_impl;
+
+template <class T, T... N, T Begin>
+struct range_impl<T, integer_sequence<T, N...>, Begin> {
+  using type = integer_sequence<T, N+Begin...>;
+};
+
+template <class S>
+struct reverse_impl;
+
+template <class T, T... N>
+struct reverse_impl<integer_sequence<T, N...>> {
+  using type = integer_sequence<T, sizeof...(N)-1-N...>;
+};
+
+} // end namespace detail
+
+template <class T, T Begin, T End>
+using make_integer_range = typename detail::range_impl<
+    T,
+    make_integer_sequence<T, (End-Begin > 0) ? (End-Begin) : 0>,
+    Begin>::type;
+
+template <class T, T N>
+using make_integer_sequence_reverse = typename detail::reverse_impl<
+    make_integer_sequence<T, N>>::type;
+
+//
+// Common aliases
+//
+
+// int_sequence
+
+template <int... Ints>
+using int_sequence = integer_sequence<int, Ints...>;
+
+template <int N>
+using make_int_sequence = make_integer_sequence<int, N>;
+
+template <int N>
+using make_int_rsequence = make_integer_sequence_reverse<int, N>;
+
+template <int Begin, int End>
+using make_int_range = make_integer_range<int, Begin, End>;
+
+// index_sequence
+
+template <size_t... Ints>
+using index_sequence = integer_sequence<size_t, Ints...>;
+
+template <size_t N>
+using make_index_sequence = make_integer_sequence<size_t, N>;
+
+template <size_t N>
+using make_index_rsequence = make_integer_sequence_reverse<size_t, N>;
+
+template <size_t Begin, size_t End>
+using make_index_range = make_integer_range<size_t, Begin, End>;
+
+//
+// Shortcuts
+//
+
+template <int... Ints>
+using seq = int_sequence<Ints...>;
+
+template <int N>
+using make_seq = make_int_sequence<N>;
+
+template <int N>
+using make_rseq = make_int_rsequence<N>;
+
+template <int Min, int Max>
+using make_range = make_int_range<Min, Max>;
+
+template <class Tuple>
+using tuple_seq = make_seq<tuple_size<remove_cvref_t<Tuple>>::value>;
+
+template <class Tuple>
+using tuple_rseq = make_rseq<tuple_size<remove_cvref_t<Tuple>>::value>;
+
+}// end namespace maxl
+
+#if 0
 namespace cute
 {
 
@@ -149,3 +241,4 @@ get(integer_sequence<T, Ints...>) {
 }
 
 } // end namespace cute
+#endif

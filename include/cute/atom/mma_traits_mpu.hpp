@@ -332,8 +332,8 @@ using namespace MPU;
 template <
   MPU::GMMA::Major tnspA,
   MPU::GMMA::Major tnspB,
-  MPU::GMMA::ScaleIn  scaleA = MPU::GMMA::ScaleIn::One,
-  MPU::GMMA::ScaleIn  scaleB = MPU::GMMA::ScaleIn::One
+  MPU::GMMA::ScaleIn  scaleA,
+  MPU::GMMA::ScaleIn  scaleB
 >
 struct MPU_64x64x16_F16F16F16_4x1_SS : public MPU::GMMA::MMA_64x64x16_F32F32F32_SS<
   tnspA, tnspB, scaleA, scaleB, MPU_64x64x16_F16F16F16_4x1_SS<tnspA, tnspB, scaleA, scaleB>> {};
@@ -364,8 +364,8 @@ struct MMA_Traits<MPU_64x64x16_F16F16F16_4x1_SS<tnspA, tnspB, scaleA, scaleB>>
 template <
   MPU::GMMA::Major tnspA,
   MPU::GMMA::Major tnspB,
-  MPU::GMMA::ScaleIn  scaleA = MPU::GMMA::ScaleIn::One,
-  MPU::GMMA::ScaleIn  scaleB = MPU::GMMA::ScaleIn::One
+  MPU::GMMA::ScaleIn  scaleA,
+  MPU::GMMA::ScaleIn  scaleB
 >
 struct MPU_64x64x16_F32F32F32_4x1_SS : public MPU::GMMA::MMA_64x64x16_F32F32F32_SS<
       tnspA, tnspB, scaleA, scaleB, MPU_64x64x16_F32F32F32_4x1_SS<tnspA, tnspB, scaleA, scaleB>> {};
@@ -397,8 +397,8 @@ struct MMA_Traits<MPU_64x64x16_F32F32F32_4x1_SS<tnspA, tnspB, scaleA, scaleB>>
 template <
   MPU::GMMA::Major tnspA,
   MPU::GMMA::Major tnspB,
-  MPU::GMMA::ScaleIn  scaleA = MPU::GMMA::ScaleIn::One,
-  MPU::GMMA::ScaleIn  scaleB = MPU::GMMA::ScaleIn::One
+  MPU::GMMA::ScaleIn  scaleA,
+  MPU::GMMA::ScaleIn  scaleB
 >
 struct MPU_64x64x16_F32F32F32_1x4_SS : public MPU::GMMA::MMA_64x64x16_F32F32F32_SS<
       tnspA, tnspB, scaleA, scaleB, MPU_64x64x16_F32F32F32_1x4_SS<tnspA, tnspB, scaleA, scaleB>> {};
@@ -430,8 +430,8 @@ struct MMA_Traits<MPU_64x64x16_F32F32F32_1x4_SS<tnspA, tnspB, scaleA, scaleB>>
 template <
   MPU::GMMA::Major tnspA,
   MPU::GMMA::Major tnspB,
-  MPU::GMMA::ScaleIn  scaleA = MPU::GMMA::ScaleIn::One,
-  MPU::GMMA::ScaleIn  scaleB = MPU::GMMA::ScaleIn::One
+  MPU::GMMA::ScaleIn  scaleA,
+  MPU::GMMA::ScaleIn  scaleB
 >
 struct MPU_64x64x16_F32F32F32_2x2_SS : public MPU::GMMA::MMA_64x64x16_F32F32F32_SS<
       tnspA, tnspB, scaleA, scaleB, MPU_64x64x16_F32F32F32_2x2_SS<tnspA, tnspB, scaleA, scaleB>> {};
@@ -463,8 +463,8 @@ struct MMA_Traits<MPU_64x64x16_F32F32F32_2x2_SS<tnspA, tnspB, scaleA, scaleB>>
 template <
   MPU::GMMA::Major tnspA,
   MPU::GMMA::Major tnspB,
-  MPU::GMMA::ScaleIn  scaleA = MPU::GMMA::ScaleIn::One,
-  MPU::GMMA::ScaleIn  scaleB = MPU::GMMA::ScaleIn::One
+  MPU::GMMA::ScaleIn  scaleA,
+  MPU::GMMA::ScaleIn  scaleB
 >
 struct MPU_128x128x64_F32F32F32_4x1_SS : public MPU::GMMA::MMA_64x64x16_F32F32F32_SS<
       tnspA, tnspB, scaleA, scaleB, MPU_128x128x64_F32F32F32_4x1_SS<tnspA, tnspB, scaleA, scaleB>> {};

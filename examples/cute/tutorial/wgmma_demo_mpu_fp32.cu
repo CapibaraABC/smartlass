@@ -48,6 +48,10 @@
 #include "cutlass/arch/mma_sm90.h"
 #include "cutlass/device_kernel.h"
 
+#define BM 128
+#define BN 128
+#define BK 32
+
 using namespace cute;
 
 template <class ElementC,
@@ -248,11 +252,11 @@ gemm_nt(int m, int n, int k,
   auto dC = make_stride(Int<1>{}, ldC);                      // (dM, dN)
 
   // Define CTA tile sizes (static)
-  auto bM = Int<256>{};//256
-  auto bN = Int<64>{};//64
-  auto bK = Int< 16>{};//16
+  auto bM = Int<BM>{};//256
+  auto bN = Int<BN>{};//64
+  auto bK = Int< BK>{};//16
   auto cta_tiler = make_shape(bM, bN, bK);                   // (BLK_M, BLK_N, BLK_K)
-  auto bP = Int<  3>{};  // Pipeline 3
+  auto bP = Int<  1>{};  // Pipeline 3
 
   // Define the smem layouts (static)
   // auto sA = tile_to_shape(SM90::GMMA::Layout_MN_SW128_Atom<TA>{}, make_shape(bM,bK,bP));
@@ -286,7 +290,7 @@ gemm_nt(int m, int n, int k,
   //     MMA_Traits<APEMMAAtom>::APELayoutMNK{}
   // );
 
-  //bMxbNxbK = 256*64*16
+  // bMxbNxbK = 256*64*16
   // using APEMMAAtom = MPU_64x64x16_F32F32F32_4x1_SS<MPU::GMMA::Major::MN,MPU::GMMA::Major::MN>;
   // auto tiled_mma = make_tiled_mma(
   //     APEMMAAtom{},
@@ -294,11 +298,24 @@ gemm_nt(int m, int n, int k,
   // );
 
   //bMxbNxbK = 128x128x64 to test split-k in each APE
-  using APEMMAAtom = MPU_64x64x16_F32F32F32_2x2_SS<MPU::GMMA::Major::MN,MPU::GMMA::Major::MN>;
+  // using APEMMAAtom = MPU_64x64x16_F32F32F32_2x2_SS<MPU::GMMA::Major::MN,MPU::GMMA::Major::MN>;
+  // auto tiled_mma = make_tiled_mma(
+  //     APEMMAAtom{},
+  //     MMA_Traits<APEMMAAtom>::APELayoutMNK{}
+  // );
+
+  auto debug_atom = ::cute::ss_op_selector<TA, TB, TC, decltype(cta_tiler), MPU::GMMA::Major::MN, MPU::GMMA::Major::MN>();
+
+  using APEMMAAtom = decltype(debug_atom);
   auto tiled_mma = make_tiled_mma(
-      APEMMAAtom{},
-      MMA_Traits<APEMMAAtom>::APELayoutMNK{}
+      APEMMAAtom{}, 
+      typename MMA_Traits<APEMMAAtom>::APELayoutMNK{}
   );
+
+  using apeLayout = typename MMA_Traits<APEMMAAtom>::APELayoutMNK;
+  if(thread0()) {
+    print("apeLayout:");print(apeLayout{});print("\n");
+  }
 
   // Define the TMAs
   // Create Global memory tensors for TMA inspection
@@ -315,8 +332,9 @@ gemm_nt(int m, int n, int k,
   dim3 dimBlock(size(tiled_mma));
   print("dimBlock:");print(dimBlock);print("\n");
   dim3 dimCluster(1, 1, 1);
-  dim3 dimGrid(round_up(size(ceil_div(m, bM)), dimCluster.x),
-               round_up(size(ceil_div(n, bN)), dimCluster.y));
+  dim3 dimGrid(1,1,1);
+  // dim3 dimGrid(round_up(size(ceil_div(m, bM)), dimCluster.x),
+  //              round_up(size(ceil_div(n, bN)), dimCluster.y));
   cutlass::ClusterLaunchParams params = {dimGrid, dimBlock, dimCluster, smem_size};
 
   void const* kernel_ptr = reinterpret_cast<void const*>(
@@ -382,15 +400,15 @@ int main(int argc, char** argv)
 
 #if defined(CUTLASS_ARCH_MMA_SM90_SUPPORTED)
 
-  int m = 256;//256
+  int m = BM;//256
   if (argc >= 2)
     sscanf(argv[1], "%d", &m);
 
-  int n = 64;//64
+  int n = BN;//64
   if (argc >= 3)
     sscanf(argv[2], "%d", &n);
 
-  int k = 16;//16
+  int k = BK;//16
   if (argc >= 4)
     sscanf(argv[3], "%d", &k);
 
